@@ -38,7 +38,8 @@ def get_all(url, params):
     items, page = [], 0
     while True:
         r = requests.get(url, params={**params, "_pageSize": 500, "_page": page}, timeout=60)
-        r.raise_for_status()
+        if not r.ok:
+            raise SystemExit(f"HTTP {r.status_code} for {r.url}\n{r.text[:800]}")
         batch = r.json()["result"]["items"]
         items.extend(batch)
         if len(batch) < 500:
@@ -82,7 +83,7 @@ print("\nIf a match is wrong (e.g. a coastal 'Kingston'), drop it from CANDIDATE
 rows = []
 for label, name, sid in matches:
     samples = get_all(
-        f"{BASE}/data/bathing-water-quality/in-season/sample.json",
+        f"{BASE}/doc/bathing-water-quality/in-season/sample.json",
         {"bathingWater": f"http://environment.data.gov.uk/id/bathing-water/{sid}"},
     )
     (RAW / f"samples_{sid}.json").write_text(json.dumps(samples))

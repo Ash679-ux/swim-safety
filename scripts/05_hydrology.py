@@ -18,8 +18,9 @@ Writes
     data/interim/rain_15min.csv station, time (UTC), rainfall mm, quality
     data/interim/flow_15min.csv station, time (UTC), flow m3/s, quality
 
-CHECK the printed flow stations: the nearest flow station may be on a
-tributary rather than the bathing river. Fix by editing FLOW_OVERRIDES.
+Flow stations are matched to the site's river (read from the site name, or
+SITE_RIVER_OVERRIDES). Sites with no same-river station are flagged "??".
+Force a particular station with FLOW_OVERRIDES.
 """
 import json
 import math
@@ -36,10 +37,20 @@ OUT = Path("data/interim")
 RAW.mkdir(parents=True, exist_ok=True)
 
 RAIN_KM, N_RAIN = 15, 3      # up to 3 rain gauges within 15 km
-FLOW_KM, N_FLOW = 25, 1      # nearest flow station within 25 km
+FLOW_KM, N_FLOW = 40, 1      # nearest flow station ON THE SAME RIVER within 40 km
 SEASON = ("04-15", "09-30")
 # Force a flow station for a site: {"site id": "station notation"}.
 FLOW_OVERRIDES = {}
+# River for sites whose name doesn't say it.
+SITE_RIVER_OVERRIDES = {"Wolvercote Mill Stream": "Thames", "Sandy Lane, Chester": "Dee"}
+
+
+def site_river(name):
+    """River a bathing water is on, read from its name ("River Teme in Ludlow" -> "Teme")."""
+    if name in SITE_RIVER_OVERRIDES:
+        return SITE_RIVER_OVERRIDES[name]
+    m = re.search(r"River (\w+)", name) or re.match(r"(\w+) (?:at|above|below|in)\b", name)
+    return m.group(1) if m else None
 
 
 def get_json(url, params=None):
@@ -125,17 +136,30 @@ for _, s in sites.iterrows():
                 "measure": measure, "opened": val(st.get("dateOpened")), "closed": val(st.get("dateClosed")),
             })
         cands.sort(key=lambda c: c["distance_km"])
+        if kind == "flow":
+            river = site_river(s["site"])
+            for c in cands:
+                c["site_river"] = river
+                c["river_match"] = bool(river) and river.lower() in str(c["river"]).lower()
+            # Same-river stations first (nearest first), then the rest as a fallback.
+            cands.sort(key=lambda c: (not c["river_match"], c["distance_km"]))
         if kind == "flow" and s["id"] in FLOW_OVERRIDES:
             cands = [c for c in cands if c["station"] == FLOW_OVERRIDES[s["id"]]] or cands
         links += cands[:n]
 
 links = pd.DataFrame(links)
 links.to_csv(OUT / "stations.csv", index=False)
-print("Linked stations (CHECK flow stations are on the bathing river):")
+print("Linked stations (flow marked OK if on the same river as the site, ?? if not):")
 for (sid, site), g in links.groupby(["id", "site"]):
     rain = ", ".join(f"{r.station_name} {r.distance_km} km" for r in g[g.kind == "rain"].itertuples()) or "NONE"
-    flow = ", ".join(f"{r.station_name} ({r.river}) {r.distance_km} km" for r in g[g.kind == "flow"].itertuples()) or "NONE"
+    flow = ", ".join(f"{'OK' if r.river_match else '??'} {r.station_name} ({r.river}) {r.distance_km} km"
+                     for r in g[g.kind == "flow"].itertuples()) or "NONE"
     print(f"  {site[:38]:38s} rain: {rain}\n  {'':38s} flow: {flow}")
+flow_links = links[links.kind == "flow"]
+mismatch = flow_links[~flow_links["river_match"].astype(bool)]
+if len(mismatch):
+    print(f"  ! {len(mismatch)} site(s) have no flow station on their own river within {FLOW_KM} km;"
+          " using the nearest other station:", mismatch["site"].tolist())
 no_data = sorted(set(sites["site"]) - set(links[links.kind == "rain"]["site"]))
 if no_data:
     print("  ! no rain gauge found for:", no_data, "- raise RAIN_KM")

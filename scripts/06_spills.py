@@ -1,7 +1,7 @@
 """Day 3: Thames Water spill history, rebuilt into spill events.
 
 Run from the project root:
-    python scripts/07_spills.py
+    python scripts/06_spills.py
 
 1. Downloads the full discharge alert history (newest first, 1000 per page)
    back to HISTORY_START, saving every page untouched in data/raw/thames/.

@@ -27,6 +27,8 @@ SINCE = 2020  # spill (EDM) monitoring is patchy before about 2020
 
 # Fallback if the register has no river/coastal field: match on the name.
 RIVER_NAME = re.compile(r"\briver\b|mill stream|\bwharfe\b|\bbrook\b|\bweir\b", re.I)
+# Matched by name but not river sites (coastal / tidal). Edit as needed.
+EXCLUDE = re.compile(r"porlock weir|estuary", re.I)
 
 
 def get_all(url, params):
@@ -58,29 +60,33 @@ else:
     sites = get_all(f"{BASE}/doc/bathing-water.json", {})
     reg_file.write_text(json.dumps(sites))
 
-# Look for a field that says whether a site is a river (e.g. a "type" field).
-type_key = None
-for k in sorted({k for s in sites for k in s}):
-    if re.search(r"type|category|kind", k, re.I):
-        vals = {text(s.get(k)) for s in sites if k in s}
-        if any(re.search(r"river", v, re.I) for v in vals):
-            type_key = k
-            print(f"Using register field '{k}' to find rivers. Values: {sorted(vals)[:10]}")
-            break
-if type_key is None:
-    print("No river/coastal field found in the register; matching on site names instead.")
-    print("Register fields:", sorted({k for s in sites for k in s}))
+def all_text(v):
+    """Join every value of a possibly-list field (e.g. several types)."""
+    return " | ".join(sorted(text(x) for x in v)) if isinstance(v, list) else text(v)
 
-rivers = []
+
+# What does the register's "type" field contain? Print it so we can see.
+type_counts = pd.Series([all_text(s.get("type")) for s in sites]).value_counts()
+print("Register 'type' values:")
+print(type_counts.to_string(), "\n")
+majority_type = type_counts.index[0]
+
+rivers, info = [], {}
 for s in sites:
     name, sid = text(s.get("name")), text(s.get("eubwidNotation"))
-    is_river = (re.search(r"river", text(s.get(type_key)), re.I) if type_key
-                else RIVER_NAME.search(name))
-    if is_river:
+    stype = all_text(s.get("type"))
+    undertaker = text(s.get("appointedSewerageUndertaker"))
+    by_name = bool(RIVER_NAME.search(name))
+    by_type = stype != majority_type  # minority type = probably inland
+    if (by_name or by_type) and not EXCLUDE.search(name):
         rivers.append((name, sid))
-print(f"\n{len(rivers)} river bathing waters:")
+        info[name] = {"undertaker": undertaker, "type": stype,
+                      "found_by": "name+type" if by_name and by_type else ("name" if by_name else "type")}
+
+print(f"{len(rivers)} candidate inland bathing waters (check this list):")
 for name, sid in rivers:
-    print(f"  {sid}  {name}")
+    i = info[name]
+    print(f"  {sid}  {name:45s} {i['undertaker'][:28]:28s} found by {i['found_by']}")
 
 # 2. Samples (cached)
 rows = []
@@ -111,7 +117,9 @@ df["fail_ie"] = df["ie"] > IE_LIMIT
 df["fail_either"] = df["fail_ecoli"] | df["fail_ie"]
 
 # 3. Summary
-by_site = df.groupby("site").agg(
+df["undertaker"] = df["site"].map(lambda n: info[n]["undertaker"])
+df["thames"] = df["undertaker"].str.contains("thames", case=False)
+by_site = df.groupby(["site", "undertaker"]).agg(
     first_year=("year", "min"), n=("year", "size"),
     fail_ecoli=("fail_ecoli", "sum"), fail_ie=("fail_ie", "sum"), fail_either=("fail_either", "sum"),
 ).sort_values("n", ascending=False)
@@ -128,5 +136,8 @@ print(f"\nTOTAL: {len(df)} samples at {df['site'].nunique()} river sites since {
 for c in ["fail_ecoli", "fail_ie", "fail_either"]:
     print(f"  {c:12s} {int(df[c].sum()):4d}  ({df[c].mean():.1%})")
 
+th = df[df["thames"]]
+print(f"\nThames Water sites only (the only company with spill history): "
+      f"{len(th)} samples, {int(th['fail_either'].sum())} fail_either")
 df.to_csv("data/audit_rivers.csv", index=False)
 print("\nSaved data/audit_rivers.csv")

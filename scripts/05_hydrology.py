@@ -165,8 +165,12 @@ if no_data:
 
 # Download each station once for every season any linked site needs.
 jobs = {}
+all_years = sorted({int(y) for ys in years.values() for y in ys})
 for r in links.itertuples():
-    for y in years.get(r.id, []):
+    # Rain: only the seasons the site was sampled. Flow: every season, so each
+    # station has training-year data to compute its typical (median) flow.
+    ys = all_years if r.kind == "flow" else years.get(r.id, [])
+    for y in ys:
         jobs.setdefault((r.kind, r.station, r.measure), set()).add(int(y))
 tables = {"rain": [], "flow": []}
 for (kind, station, measure), ys in tqdm(sorted(jobs.items()), desc="Downloading gauges", unit="station"):

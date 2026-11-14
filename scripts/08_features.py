@@ -195,7 +195,7 @@ feats = pd.DataFrame(rows, index=samples.index)
 local = pd.to_datetime(samples["sample_time_utc"], utc=True, format="ISO8601").dt.tz_convert("Europe/London")
 out = pd.concat([samples[["id", "site", "sample_time_utc", "year", "ecoli", "ie", "fail",
                           "fail_ecoli", "fail_ie", "discountable", "extra_sample"]], feats], axis=1)
-out["month"], out["day_of_year"] = local.dt.month, local.dt.dayofyear
+out["month"], out["day_of_year"] = local.dt.month, local.dt.day_of_year
 out["thames"] = out["id"].isin(thames_ids)
 out["spill_data_ok"] = out["thames"] & (local.dt.year >= 2023)
 out["split"] = np.where(out["year"] >= TEST_YEAR, "test", "train")

@@ -19,7 +19,7 @@ Writes
     data/interim/flow_15min.csv station, time (UTC), flow m3/s, quality
 
 Flow stations are matched to the site's river (read from the site name, or
-SITE_RIVER_OVERRIDES). Sites with no same-river station are flagged "??".
+SITE_RIVER_OVERRIDES). Sites with no same-river station get no flow data (left missing).
 Force a particular station with FLOW_OVERRIDES.
 """
 import json
@@ -141,8 +141,8 @@ for _, s in sites.iterrows():
             for c in cands:
                 c["site_river"] = river
                 c["river_match"] = bool(river) and river.lower() in str(c["river"]).lower()
-            # Same-river stations first (nearest first), then the rest as a fallback.
-            cands.sort(key=lambda c: (not c["river_match"], c["distance_km"]))
+            # Only same-river stations: flow from a different river is worse than none.
+            cands = [c for c in cands if c["river_match"]]
         if kind == "flow" and s["id"] in FLOW_OVERRIDES:
             cands = [c for c in cands if c["station"] == FLOW_OVERRIDES[s["id"]]] or cands
         links += cands[:n]
@@ -155,11 +155,10 @@ for (sid, site), g in links.groupby(["id", "site"]):
     flow = ", ".join(f"{'OK' if r.river_match else '??'} {r.station_name} ({r.river}) {r.distance_km} km"
                      for r in g[g.kind == "flow"].itertuples()) or "NONE"
     print(f"  {site[:38]:38s} rain: {rain}\n  {'':38s} flow: {flow}")
-flow_links = links[links.kind == "flow"]
-mismatch = flow_links[~flow_links["river_match"].astype(bool)]
-if len(mismatch):
-    print(f"  ! {len(mismatch)} site(s) have no flow station on their own river within {FLOW_KM} km;"
-          " using the nearest other station:", mismatch["site"].tolist())
+no_flow = sorted(set(sites["site"]) - set(links[links.kind == "flow"]["site"]))
+if no_flow:
+    print(f"  ! no flow station on the site's own river within {FLOW_KM} km, so flow is left"
+          " missing for:", no_flow)
 no_data = sorted(set(sites["site"]) - set(links[links.kind == "rain"]["site"]))
 if no_data:
     print("  ! no rain gauge found for:", no_data, "- raise RAIN_KM")

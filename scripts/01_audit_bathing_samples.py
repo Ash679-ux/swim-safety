@@ -84,16 +84,19 @@ rows = []
 for label, name, sid in matches:
     samples = get_all(
         f"{BASE}/doc/bathing-water-quality/in-season/sample.json",
-        {"bathingWater": f"http://environment.data.gov.uk/id/bathing-water/{sid}"},
+        {"bwq_bathingWater.eubwidNotation": sid},
     )
     (RAW / f"samples_{sid}.json").write_text(json.dumps(samples))
+    print(f"{name}: {len(samples)} samples downloaded")
     for it in samples:
-        date_k = find_key(it, "sampledatetime") or find_key(it, "date")
-        ecoli_k = find_key(it, "coli", "count")
+        qual = it.get("escherichiaColiQualifier") or {}
         rows.append({
             "site": name, "id": sid,
-            "date": text(it.get(date_k)) if date_k else None,
-            "ecoli": text(it.get(ecoli_k)) if ecoli_k else None,
+            "date": text(it.get("sampleDateTime")),
+            "ecoli": it.get("escherichiaColiCount"),
+            # "=" actual count, "<"/">" means below/above the lab's range
+            "ecoli_qualifier": qual.get("countQualifierNotation") if isinstance(qual, dict) else None,
+            "enterococci": it.get("intestinalEnterococciCount"),
         })
 
 if not rows:
@@ -101,9 +104,9 @@ if not rows:
 
 df = pd.DataFrame(rows)
 df["date"] = pd.to_datetime(df["date"], errors="coerce", utc=True)
-df["ecoli"] = pd.to_numeric(df["ecoli"].str.replace(r"[<>]", "", regex=True), errors="coerce")
+df["ecoli"] = pd.to_numeric(df["ecoli"], errors="coerce")
 df["year"] = df["date"].dt.year
-print(f"Field names seen in one sample record: {sorted(samples[0].keys()) if samples else 'n/a'}\n")
+print("\nE. coli qualifiers:", df["ecoli_qualifier"].value_counts(dropna=False).to_dict(), "\n")
 
 # 3. Summary
 summary = df.groupby(["site", "year"]).agg(n=("ecoli", "size"), missing_ecoli=("ecoli", lambda s: s.isna().sum()))

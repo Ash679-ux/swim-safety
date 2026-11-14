@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pandas as pd
 import requests
+from tqdm import tqdm
 
 BASE = "https://environment.data.gov.uk"
 RAW = Path("data/raw/bwq")
@@ -81,13 +82,13 @@ print("\nIf a match is wrong (e.g. a coastal 'Kingston'), drop it from CANDIDATE
 
 # 2. Samples for each matched site
 rows = []
-for label, name, sid in matches:
+for label, name, sid in tqdm(matches, desc="Downloading samples", unit="site"):
     samples = get_all(
         f"{BASE}/doc/bathing-water-quality/in-season/sample.json",
         {"bwq_bathingWater.eubwidNotation": sid},
     )
     (RAW / f"samples_{sid}.json").write_text(json.dumps(samples))
-    print(f"{name}: {len(samples)} samples downloaded")
+    tqdm.write(f"{name}: {len(samples)} samples downloaded")
     for it in samples:
         qual = it.get("escherichiaColiQualifier") or {}
         rows.append({

@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pandas as pd
 import requests
+from tqdm import tqdm
 
 BASE = "https://environment.data.gov.uk"
 RAW = Path("data/raw/bwq")
@@ -90,7 +91,7 @@ for name, sid in rivers:
 
 # 2. Samples (cached)
 rows = []
-for name, sid in rivers:
+for name, sid in tqdm(rivers, desc="Downloading samples", unit="site"):
     f = RAW / f"samples_{sid}.json"
     if f.exists():
         samples = json.loads(f.read_text())

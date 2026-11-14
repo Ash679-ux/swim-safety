@@ -3,7 +3,7 @@
 Run from the project root (after 01_audit_bathing_samples.py):
     python scripts/03_audit_all_rivers.py
 
-1. Picks out river bathing waters from the EA register.
+1. Picks out river bathing waters using the register's own type labels.
 2. Downloads every in-season sample for each (raw JSON cached in data/raw/bwq/).
 3. Counts samples and failures under three candidate labels:
      ecoli  : E. coli > 1000 cfu/100 ml
@@ -26,10 +26,10 @@ RAW.mkdir(parents=True, exist_ok=True)
 ECOLI_LIMIT, IE_LIMIT = 1000, 400
 SINCE = 2020  # spill (EDM) monitoring is patchy before about 2020
 
-# Fallback if the register has no river/coastal field: match on the name.
-RIVER_NAME = re.compile(r"\briver\b|mill stream|\bwharfe\b|\bbrook\b|\bweir\b", re.I)
-# Matched by name but not river sites (coastal / tidal). Edit as needed.
-EXCLUDE = re.compile(r"porlock weir|estuary", re.I)
+# Which register types to include. The EA register labels every site as
+# River, Lake, Transitional (estuary) or Coastal. Add "LakeBathingWater"
+# here to include lakes and ponds as well.
+INCLUDE_TYPES = ["RiverBathingWater"]
 
 
 def get_all(url, params):
@@ -70,24 +70,18 @@ def all_text(v):
 type_counts = pd.Series([all_text(s.get("type")) for s in sites]).value_counts()
 print("Register 'type' values:")
 print(type_counts.to_string(), "\n")
-majority_type = type_counts.index[0]
 
 rivers, info = [], {}
 for s in sites:
     name, sid = text(s.get("name")), text(s.get("eubwidNotation"))
     stype = all_text(s.get("type"))
-    undertaker = text(s.get("appointedSewerageUndertaker"))
-    by_name = bool(RIVER_NAME.search(name))
-    by_type = stype != majority_type  # minority type = probably inland
-    if (by_name or by_type) and not EXCLUDE.search(name):
+    if any(t in stype for t in INCLUDE_TYPES):
         rivers.append((name, sid))
-        info[name] = {"undertaker": undertaker, "type": stype,
-                      "found_by": "name+type" if by_name and by_type else ("name" if by_name else "type")}
+        info[name] = {"undertaker": text(s.get("appointedSewerageUndertaker"))}
 
-print(f"{len(rivers)} candidate inland bathing waters (check this list):")
+print(f"{len(rivers)} bathing waters of type {INCLUDE_TYPES}:")
 for name, sid in rivers:
-    i = info[name]
-    print(f"  {sid}  {name:45s} {i['undertaker'][:28]:28s} found by {i['found_by']}")
+    print(f"  {sid}  {name:45s} {info[name]['undertaker'][:30]}")
 
 # 2. Samples (cached)
 rows = []

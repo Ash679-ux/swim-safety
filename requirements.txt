@@ -5,3 +5,5 @@ tqdm
 tifffile
 pyproj
 scikit-learn
+statsmodels
+scipy

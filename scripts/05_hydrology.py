@@ -1,4 +1,4 @@
-"""Day 2: rainfall and river flow near each river bathing water.
+"""Rainfall and river flow near each river bathing water.
 
 Run from the project root (after 04_samples.py):
     python scripts/05_hydrology.py

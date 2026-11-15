@@ -1,4 +1,4 @@
-"""Day 1: first request to the Thames Water discharge (spill) history API.
+"""First request to the Thames Water discharge (spill) history API.
 
 Run from the project root:
     python scripts/02_test_thames_api.py

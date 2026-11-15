@@ -1,4 +1,4 @@
-"""Day 5: main model on all 20 river sites (rain, flow, season, site).
+"""Main model on all 20 river sites (rain, flow, season, site).
 
 Run from the project root (after 08_features.py):
     python scripts/09_models.py

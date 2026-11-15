@@ -1,4 +1,4 @@
-"""Day 1 audit, part 2: how much data is there across ALL river bathing waters?
+"""Audit, part 2: how much data is there across ALL river bathing waters?
 
 Run from the project root (after 01_audit_bathing_samples.py):
     python scripts/03_audit_all_rivers.py

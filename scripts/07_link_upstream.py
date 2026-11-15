@@ -1,4 +1,4 @@
-"""Day 3: which overflows are upstream of each Thames bathing site?
+"""Which overflows are upstream of each Thames bathing site?
 
 Run from the project root (after 06_spills.py):
     python scripts/07_link_upstream.py
@@ -12,7 +12,7 @@ Method (the "upstream rule" for the README's Data decisions section):
     upstream of the site, and the path length to that point is its distance
     along the river (river_km).
   * Overflows downstream of a site never pass it, so they are excluded
-    automatically. Features on Day 4 choose how far upstream to count.
+    automatically. The feature step chooses how far upstream to count.
 
 Writes data/interim/upstream_links.csv: one row per (site, upstream overflow).
 """

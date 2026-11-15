@@ -1,4 +1,4 @@
-"""Day 6: do upstream spills predict failures beyond what rain already explains?
+"""Do upstream spills predict failures beyond what rain already explains?
 
 Run from the project root (after 08_features.py):
     python scripts/10_spills_experiment.py

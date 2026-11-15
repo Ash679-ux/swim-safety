@@ -1,4 +1,4 @@
-"""Day 4: one row of features per sample, using only data from before the sample.
+"""One row of features per sample, using only data from before the sample.
 
 Run from the project root (after scripts 04-07):
     python scripts/08_features.py

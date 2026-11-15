@@ -1,4 +1,4 @@
-"""Day 3: Thames Water spill history, rebuilt into spill events.
+"""Thames Water spill history, rebuilt into spill events.
 
 Run from the project root:
     python scripts/06_spills.py

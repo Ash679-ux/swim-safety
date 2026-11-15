@@ -1,4 +1,4 @@
-"""Day 1 audit: find the candidate bathing waters and count their EA samples.
+"""Audit: find the candidate bathing waters and count their EA samples.
 
 Run from the project root:
     python scripts/01_audit_bathing_samples.py
@@ -8,7 +8,7 @@ What it does
    the candidate sites by name.
 2. Downloads every in-season sample for each site (saved raw, untouched).
 3. Prints samples per site per year, and how many exceed two candidate
-   E. coli thresholds, so you can decide on Day 1 whether to add regions.
+   E. coli thresholds, so you can decide whether to add regions.
 """
 import json
 import re

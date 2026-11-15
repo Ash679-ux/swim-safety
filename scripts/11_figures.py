@@ -61,7 +61,8 @@ g = f.groupby("rain_bin", observed=False)["fail"].agg(["sum", "size"])
 g = g[g["size"] > 0]  # drop empty rain groups
 labels = list(g.index)
 rate = g["sum"] / g["size"]
-lo, hi = zip(*[wilson(k, n) for k, n in zip(g["sum"], g["size"])])
+lo, hi = (np.array(v) for v in zip(*[wilson(k, n) for k, n in zip(g["sum"], g["size"])]))
+rate = rate.to_numpy()
 
 fig, ax = plt.subplots(figsize=(8, 4.8))
 x = np.arange(len(labels))

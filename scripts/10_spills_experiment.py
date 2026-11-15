@@ -68,8 +68,10 @@ tab = d.groupby(["rain_group", "recent_spill"], observed=True)["y"].agg(samples=
 print(tab.round(3).to_string())
 both = d.groupby("recent_spill")["y"].agg(["sum", "size"])
 if len(both) == 2:
-    t = [[both.loc[True, "sum"], both.loc[True, "size"] - both.loc[True, "sum"]],
-         [both.loc[False, "sum"], both.loc[False, "size"] - both.loc[False, "sum"]]]
+    n_fail = {k: int(both.loc[k, "sum"]) for k in (True, False)}
+    n_all = {k: int(both.loc[k, "size"]) for k in (True, False)}
+    t = [[n_fail[True], n_all[True] - n_fail[True]],
+         [n_fail[False], n_all[False] - n_fail[False]]]
     print(f"   Fisher exact test, spill vs no spill (ignoring rain): p = {stats.fisher_exact(t)[1]:.3f}")
 
 

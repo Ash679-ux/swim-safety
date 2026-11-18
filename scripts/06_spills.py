@@ -27,6 +27,8 @@ import pandas as pd
 import requests
 from tqdm import tqdm
 
+from funcs import pair
+
 URL = "https://api.thameswater.co.uk/opendata/v2/discharge/alerts"
 LIMIT = 1000
 HISTORY_START = pd.Timestamp("2022-04-01")  # history is valid from here
@@ -104,22 +106,6 @@ if (renamed > 1).any():
           "monitors are keyed by permit number.")
 
 # ---------------------------------------------------------------- 3. pairs
-def pair(g, start_type, stop_type):
-    """Pair each start with the next stop for one monitor."""
-    out, open_start, unmatched_stop = [], None, 0
-    for row in g.itertuples():
-        if row.alertType == start_type:
-            if open_start is None:           # a repeated Start keeps the first one
-                open_start = row.time_utc
-        elif row.alertType == stop_type:
-            if open_start is not None:
-                out.append((open_start, row.time_utc))
-                open_start = None
-            else:
-                unmatched_stop += 1          # its Start is before the downloaded history
-    if open_start is not None:
-        out.append((open_start, pd.NaT))     # still ongoing at download time
-    return out, unmatched_stop
 
 
 spills, offline, unmatched = [], [], {"spill": 0, "offline": 0}
@@ -134,6 +120,8 @@ for permit, g in tqdm(df.groupby("permitNumber"), desc="Rebuilding events", unit
 now = pd.Timestamp.now(tz="UTC")
 for name, rows in [("spills", spills), ("offline", offline)]:
     ev = pd.DataFrame(rows, columns=["permitNumber", "start_utc", "end_utc"])
+    for c in ("start_utc", "end_utc"):  # keep a date type even when there are no events
+        ev[c] = pd.to_datetime(ev[c], utc=True)
     ev["ongoing"] = ev["end_utc"].isna()
     ev["hours"] = ((ev["end_utc"].fillna(now) - ev["start_utc"]).dt.total_seconds() / 3600).round(3)
     ev = ev.merge(monitors[["permitNumber", "location", "watercourse", "x", "y"]], on="permitNumber", how="left")

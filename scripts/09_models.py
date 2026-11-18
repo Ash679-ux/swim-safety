@@ -59,10 +59,11 @@ from sklearn.preprocessing import FunctionTransformer, StandardScaler
 from threadpoolctl import threadpool_limits
 from tqdm import tqdm
 
+from funcs import fast_ap, site_rate_by_other_seasons, site_rate_map
+
 SEED = 0
 RESULTS = Path("results")
 RESULTS.mkdir(exist_ok=True)
-PRIOR_STRENGTH = 10  # smoothing for the site failure rate (in samples)
 
 RAIN = ["rain_6h", "rain_24h", "rain_48h", "rain_72h", "rain_7d"]
 FLOW = ["flow_rel", "flow_change_24h"]
@@ -76,31 +77,6 @@ df = pd.read_csv("data/processed/features.csv")
 train, test = df[df["split"] == "train"].copy(), df[df["split"] == "test"].copy()
 y_tr, y_te = train["fail"].astype(int).to_numpy(), test["fail"].astype(int).to_numpy()
 print(f"Train {len(train)} samples ({y_tr.mean():.1%} fail), test {len(test)} ({y_te.mean():.1%} fail)")
-
-def site_rate_map(fit):
-    """Smoothed failure rate per site, learned from the rows in `fit`.
-    Returns (rate per site, overall rate for sites not in `fit`)."""
-    g = fit["fail"].mean()
-    st = fit.groupby("id")["fail"].agg(["sum", "size"])
-    return ((st["sum"] + PRIOR_STRENGTH * g) / (st["size"] + PRIOR_STRENGTH)).to_dict(), g
-
-
-def site_rate_by_other_seasons(rows):
-    """Each row's site rate learned only from OTHER seasons, so no row's own
-    season (and so never its own label) feeds its feature. A leave-one-out rate
-    would leak: failing rows would always get a slightly lower rate than passing
-    rows at the same site, which tree models learn as a fake pattern."""
-    out = pd.Series(np.nan, index=rows.index)
-    overall = rows["fail"].mean()
-    for yr in rows["year"].unique():
-        others = rows[rows["year"] != yr]
-        mask = rows["year"] == yr
-        if others.empty:  # only one season available: no site history to use
-            out[mask] = overall
-            continue
-        rate, g = site_rate_map(others)
-        out[mask] = rows.loc[mask, "id"].map(rate).fillna(g)
-    return out
 
 
 rate, g = site_rate_map(train)
@@ -200,17 +176,6 @@ def best_threshold(y, score):
 # between models can be compared resample by resample (a paired bootstrap).
 _rng = np.random.default_rng(SEED)
 BOOT = [i for i in (_rng.integers(0, len(y_te), len(y_te)) for _ in range(1000)) if y_te[i].min() != y_te[i].max()]
-
-
-def fast_ap(y, s):
-    """Same result as sklearn's average_precision_score (checked to 1e-15), but
-    much faster: it skips sklearn's input checks, which dominate over 1000 calls."""
-    order = np.argsort(-s, kind="mergesort")
-    y_s, s_s = y[order], s[order]
-    last = np.r_[np.flatnonzero(np.diff(s_s)), len(s_s) - 1]  # last row of each tied score
-    tps = np.cumsum(y_s)[last]
-    precision, recall = tps / (last + 1), tps / tps[-1]
-    return float(np.sum(np.diff(np.r_[0.0, recall]) * precision))
 
 
 def boot_scores(s):

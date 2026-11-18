@@ -126,10 +126,21 @@ python scripts/12_error_analysis.py    # calibration and error analysis
 
 Scripts 01–03 are the initial data audit and are not needed to rebuild the results. The first full run downloads several million readings and takes about 10–15 minutes.
 
+## Tests
+
+`pytest` runs 35 unit tests of the core logic (`tests/test_funcs.py`): the failure label, pairing spill start/stop alerts, rain and weather windows (including that readings after a sample are never used), spills "as known at the time", the site-history feature (including a check that the label can't leak into it) and the fast PR-AUC used for the bootstrap. They also run on GitHub on every push.
+
+## Licence and data
+
+Code: MIT licence (see `LICENSE`). Data: EA bathing-water and hydrology data under the Open Government Licence v3.0; Thames Water open data under its portal terms; Open-Meteo weather data under CC BY 4.0; the flow-direction grid from the POOPy project. Raw data isn't committed; the scripts download it.
+
 ## Repository layout
 
 ```
-scripts/        numbered pipeline steps (01-12) and shared helpers (common.py, plotstyle.py)
+run_all.sh      runs the pipeline in order (./run_all.sh, or ./run_all.sh 06 to start at step 06)
+scripts/        numbered pipeline steps (01-12) and shared code (common.py downloads,
+                funcs.py tested core logic, plotstyle.py figure style)
+tests/          unit tests (pytest)
 data/raw/       untouched API downloads (not committed; rebuilt by the scripts)
 data/interim/   cleaned tables: samples, sites, stations, rain, flow, spills, links
 data/processed/ features.csv, one row per sample

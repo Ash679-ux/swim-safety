@@ -25,6 +25,7 @@ import requests
 from tqdm import tqdm
 
 from common import BASE, RAW, load_register, load_samples, river_sites, text
+from funcs import fails
 
 SINCE = 2020
 ECOLI_LIMIT, IE_LIMIT = 1000, 400
@@ -167,8 +168,6 @@ df = df[~missing]
 log.append(("after dropping missing counts", len(df)))
 
 # --------------------------------------------------------------- 4. labels
-def fails(count, qual, limit):
-    return (count > limit) | ((qual == ">") & (count >= limit))
 
 df["fail_ecoli"] = fails(df["ecoli"], df["ecoli_qual"], ECOLI_LIMIT)
 df["fail_ie"] = fails(df["ie"], df["ie_qual"], IE_LIMIT)

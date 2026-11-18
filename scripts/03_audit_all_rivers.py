@@ -13,7 +13,6 @@ Run from the project root (after 01_audit_bathing_samples.py):
    in the README's Data decisions section.)
 """
 import json
-import re
 
 import pandas as pd
 from tqdm import tqdm

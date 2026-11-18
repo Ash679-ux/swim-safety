@@ -50,15 +50,14 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
+from funcs import (HOUR, as_known_at, build_series, flow_at, hourly_window, rain_total,
+                   truncate)
+
 INTERIM, OUT = Path("data/interim"), Path("data/processed")
 OUT.mkdir(parents=True, exist_ok=True)
 TEST_YEAR = 2026
-STEP = np.timedelta64(15, "m").astype("timedelta64[ns]").astype(np.int64)
-HOUR = 3600 * 10**9
 RAIN_WINDOWS = {"6h": 6, "24h": 24, "48h": 48, "72h": 72, "7d": 168}
 SPILL_WINDOWS, BANDS = (24, 48, 72), (10, 25, 50)
-MIN_COVERAGE = 0.8
-FLOW_MAX_AGE_H = 2
 SINCE_CAP_H = 30 * 24
 DECAY_KM = 10
 N_LEAK_TESTS = 25
@@ -70,57 +69,6 @@ def ns(s):
     out = t.astype("int64").to_numpy(np.int64, copy=True)
     out[t.isna().to_numpy()] = np.iinfo(np.int64).max
     return out
-
-
-def build_series(df, value_col):
-    """Per station: sorted times, cumulative sums and cumulative counts of present values."""
-    out = {}
-    for st, g in df.groupby("station"):
-        g = g.sort_values("t")
-        v = g[value_col].to_numpy(float)
-        ok = ~np.isnan(v)
-        out[st] = {"t": g["t"].to_numpy(np.int64), "v": v,
-                   "cum": np.concatenate([[0], np.cumsum(np.where(ok, v, 0))]),
-                   "cnt": np.concatenate([[0], np.cumsum(ok)])}
-    return out
-
-
-def truncate(series, t):
-    """The station series as it would have been known at time t (leakage test)."""
-    out = {}
-    for st, s in series.items():
-        k = np.searchsorted(s["t"], t, "right")
-        out[st] = {"t": s["t"][:k], "v": s["v"][:k], "cum": s["cum"][:k + 1], "cnt": s["cnt"][:k + 1]}
-    return out
-
-
-def rain_total(s, t, hours):
-    end = t - STEP
-    i1 = np.searchsorted(s["t"], end, "right")
-    i0 = np.searchsorted(s["t"], end - hours * HOUR, "right")
-    if (s["cnt"][i1] - s["cnt"][i0]) < MIN_COVERAGE * hours * 4:
-        return np.nan
-    return s["cum"][i1] - s["cum"][i0]
-
-
-def flow_at(s, t):
-    i = np.searchsorted(s["t"], t, "right") - 1
-    if i < 0 or t - s["t"][i] > FLOW_MAX_AGE_H * HOUR:
-        return np.nan
-    return s["v"][i]
-
-
-def hourly_window(s, t, hours, how):
-    """Sum or mean of hourly values in (t - hours, t]. Each hourly value covers
-    the hour up to its timestamp, so nothing after t is used. Needs 80% of
-    the hours present, else NaN."""
-    i1 = np.searchsorted(s["t"], t, "right")
-    i0 = np.searchsorted(s["t"], t - hours * HOUR, "right")
-    n = s["cnt"][i1] - s["cnt"][i0]
-    if n < MIN_COVERAGE * hours:
-        return np.nan
-    total = s["cum"][i1] - s["cum"][i0]
-    return total / n if how == "mean" else total
 
 
 def weather_features(t, sid, wx):
@@ -226,14 +174,6 @@ def features_for(row, rain_, flow_, wx_, spills_override=None, offline_override=
                       flow_median, sp, site_links.get(sid), off)
     f.update(weather_features(row["t"], sid, wx_))
     return f
-
-
-def as_known_at(events, t):
-    """Events as they would have been known at time t: started by t, and any
-    Stop that came after t not yet received (end unknown)."""
-    ev = events[events["start"] <= t].copy()
-    ev.loc[ev["end"] > t, "end"] = np.iinfo(np.int64).max
-    return ev
 
 
 rows = []

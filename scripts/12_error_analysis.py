@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from plotstyle import AXIS, FIG, INK2, MUTED, SERIES, SURFACE, subtitle, wilson
+from plotstyle import AXIS, FIG, SERIES, SURFACE, subtitle, wilson
 
 ECOLI_LIMIT, IE_LIMIT = 1000, 400
 BEST = "logreg_all"

@@ -6,6 +6,7 @@ Predicting whether a river bathing-water sample in England will fail its bacteri
 
 - **Rain is the main driver.** About 10% of samples fail after a dry 48 hours, 27% after 4–10 mm of rain, and 74% after more than 10 mm.
 - **A one-line rain rule does most of the work.** "Fail if more than 2.7 mm fell in the previous 48 h" scores PR-AUC 0.48 on the unseen 2026 season. A logistic regression with rain, flow, season and site history scores 0.55, but the uncertainty ranges overlap.
+- **About a quarter of failures can't be predicted from rain.** 17 of the 62 failures in 2026 came after a dry 48 hours, and no weather model caught any of them.
 - **Upstream sewage spills hint at extra risk beyond rain, but the data can't confirm it.** At Thames Water sites, spills 25–50 km upstream over the previous 2–3 days are linked to higher odds of failure (odds ratio about 1.6, permutation p = 0.06). With only 10 failures, this is a lead for more data rather than a firm result.
 
 ## The question
@@ -32,20 +33,31 @@ Only Thames Water publishes spill *history*; other water companies share only wh
 
 ### Main model: all 20 sites, tested on the unseen 2026 season
 
-Trained on 2021–2025 (664 samples), tested on 2026 (398 samples, 62 failures). Thresholds were chosen on the training data only.
+Trained on 2021–2025 (664 samples), tested on 2026 (398 samples, 62 failures). Decision thresholds were chosen on the training data only, using leave-one-season-out predictions (each training season predicted by a model that never saw it).
 
 | Model | PR-AUC (95% range) | ROC-AUC | Failures caught | Samples flagged | Precision |
 | --- | --- | --- | --- | --- | --- |
 | Random guessing | 0.16 | 0.50 | | | |
 | Site failure rate only | 0.28 (0.20–0.37) | 0.70 | 53 of 62 | 239 | 22% |
 | Rain rule (> 2.7 mm in 48 h) | 0.48 (0.36–0.61) | 0.75 | 40 of 62 | 107 | 37% |
-| Logistic regression, rain + season | 0.51 (0.39–0.63) | 0.76 | 27 of 62 | 55 | 49% |
-| Logistic regression, all features | 0.55 (0.42–0.67) | 0.83 | 32 of 62 | 72 | 44% |
-| Random forest, all features | 0.54 (0.42–0.67) | 0.83 | 36 of 62 | 84 | 43% |
+| Logistic regression, rain + season | 0.51 (0.39–0.63) | 0.76 | 34 of 62 | 79 | 43% |
+| Logistic regression, all features | 0.55 (0.42–0.67) | 0.83 | 31 of 62 | 62 | 50% |
+| Random forest, all features | 0.54 (0.42–0.67) | 0.83 | 25 of 62 | 46 | 54% |
+| Gradient boosting, all features (rain can only raise risk) | 0.46 (0.34–0.58) | 0.76 | 24 of 62 | 53 | 45% |
 
 ![Precision-recall curves on the 2026 test season](results/figures/2_precision_recall_2026.png)
 
-The models' small edge over the rain rule comes from knowing each site's history: PR-AUC 0.60 vs 0.50 on familiar sites, but about the same (0.46–0.49) on the 6 sites first sampled in 2026. For a site with no history, the rain rule is as good as anything tried here.
+The models' small edge over the rain rule comes from knowing each site's history: PR-AUC 0.60 vs 0.50 on familiar sites, but about the same (0.46–0.49) on the 6 sites first sampled in 2026. Gradient boosting, the usual strongest method for tabular data, did worse than logistic regression: with about 180 training failures, a more flexible model has more room to fit noise.
+
+### Calibration and error analysis
+
+![Calibration of the logistic regression on 2026, before and after recalibration](results/figures/4_calibration_2026.png)
+
+- **Raw scores overstate risk about twice over.** The logistic regression predicted an average 32% chance of failing; 16% failed. Balanced class weights inflate the scores, and 2026 was a cleaner year than the training years. A logistic recalibration fitted on the training years brings the average to 19% and improves the Brier score from 0.134 to 0.099. The ranking, and so PR-AUC, is unchanged.
+- **About a quarter of failures follow dry weather.** 17 of 62 failures came after less than 0.5 mm of rain in 48 hours; no weather model caught any of them. Of the 21 failures missed by all four weather models, 81% followed a dry 48 hours and 6 were at the River Tone in Taunton. Several came after a wet week (12–21 mm over 7 days) or at very low flow (0.1–0.5× normal), which hints at slow catchment drainage or less dilution of steady sources such as treated effluent.
+- **On new sites, use the rain rule.** It caught 11 of 21 failures at the six sites first sampled in 2026; the full logistic regression caught 5, because it leans on site history that new sites don't have.
+- **Marginal failures are hardest:** 39% of failures at 1–2× the limit were caught, against 71% at more than 5×.
+- **False alarms are mostly near misses:** 31 of the model's 62 alerts didn't fail, but 68% of those were at least half the limit.
 
 ### Spills experiment: 4 Thames sites, 2023–2026
 
@@ -87,7 +99,8 @@ In plain terms: under the rain model, a sample taken after 6 hours of upstream s
 - **The spills experiment is small:** 179 samples and 10 failures. Treat it as a lead, not a finding.
 - **Spill data covers Thames Water only**, because no other company publishes spill history.
 - **Spill alerts indicate spills, they don't confirm them**, and monitors can be offline.
-- **2026 was cleaner than the training years** (15.6% failing vs 26.7%), so thresholds set on training data flag more often than 2026 needed.
+- **2026 was cleaner than the training years** (15.6% failing vs 26.7%), so thresholds and probabilities learned from training data run high for 2026.
+- **About a quarter of failures follow dry weather**, which no feature here explains.
 - **Six sites appear only in the 2026 test set**, so results there reflect performance on new sites.
 - **Wolvercote's 2022 season** comes before most Thames monitors were connected, so it is excluded from the spills experiment.
 
@@ -109,6 +122,7 @@ python scripts/08_features.py          # features, with a leakage test
 python scripts/09_models.py            # main model
 python scripts/10_spills_experiment.py # spills experiment
 python scripts/11_figures.py           # figures
+python scripts/12_error_analysis.py    # calibration and error analysis
 ```
 
 Scripts 01–03 are the initial data audit and are not needed to rebuild the results. The first full run downloads several million readings and takes about 10–15 minutes.
@@ -116,7 +130,7 @@ Scripts 01–03 are the initial data audit and are not needed to rebuild the res
 ## Repository layout
 
 ```
-scripts/        numbered pipeline steps (01-11) and shared helpers (common.py)
+scripts/        numbered pipeline steps (01-12) and shared helpers (common.py, plotstyle.py)
 data/raw/       untouched API downloads (not committed; rebuilt by the scripts)
 data/interim/   cleaned tables: samples, sites, stations, rain, flow, spills, links
 data/processed/ features.csv, one row per sample

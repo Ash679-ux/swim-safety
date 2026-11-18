@@ -1,13 +1,15 @@
 # Is the river safe to swim in today?
 
-Predicting whether a river bathing-water sample in England will fail its bacteria limits, from recent rain, river flow and upstream sewage spills. Every dataset was collected and linked from public APIs, not downloaded as a ready-made table.
+Predicting whether a sample at one of England's 20 river bathing sites will fail its bacteria limits, from recent rain, river flow and upstream sewage spills. The dataset was built from four public APIs (about 1,000 samples, 4 million rain and flow readings, 73,000 sewage spills), not downloaded ready-made.
 
-**Main findings**
+![Failure rate by rain in the previous 48 hours](results/figures/1_failure_rate_by_rain.png)
 
-- **Rain is the main driver.** About 10% of samples fail after a dry 48 hours, 27% after 4–10 mm of rain, and 74% after more than 10 mm.
-- **A one-line rain rule does most of the work.** "Fail if more than 2.7 mm fell in the previous 48 h" scores PR-AUC 0.48 on the unseen 2026 season. A logistic regression with rain, flow, season and site history scores 0.54, but a paired comparison can't tell the two apart; random forests and gradient boosting did no better.
-- **About a quarter of failures can't be predicted from rain.** 17 of the 62 failures in 2026 came after a dry 48 hours, and no weather model caught any of them.
-- **Upstream sewage spills hint at extra risk beyond rain, but the data can't confirm it.** At Thames Water sites, spills 25–50 km upstream over the previous 2–3 days are linked to higher odds of failure (odds ratio about 1.6, permutation p = 0.06). With only 10 failures, this is a lead for more data rather than a firm result.
+- **Rain is the main driver.** About 10% of samples fail after a dry 48 hours, and 74% after more than 10 mm.
+- **A one-line rule is as good as the models.** "Fail if more than 2.7 mm fell in the previous 48 h" scores PR-AUC 0.48 on the unseen 2026 season; logistic regression, random forests and gradient boosting can't be told apart from it.
+- **About a quarter of failures can't be predicted from rain:** 17 of 62 came after a dry 48 hours.
+- **Sewage spills upstream hint at extra risk beyond rain** (odds ratio about 1.6, permutation p = 0.06), but with only 10 failures at the Thames sites this is a lead, not a finding.
+
+Skills shown: building a dataset from APIs, linking sources in space and time, leakage-safe features with a built-in test, time-based evaluation, calibration, error analysis and honest statistics on small data.
 
 ## The question
 
@@ -28,8 +30,6 @@ Given the rain and the sewage spills upstream in the last few days, will today's
 Only Thames Water publishes spill *history*; other water companies share only what is spilling now. So spill features exist for the 4 Thames sites, and the spills question is tested there.
 
 ## Results
-
-![Failure rate by rain in the previous 48 hours](results/figures/1_failure_rate_by_rain.png)
 
 ### Main model: all 20 sites, tested on the unseen 2026 season
 
@@ -79,24 +79,7 @@ In plain terms: under the rain model, a sample taken after 6 hours of upstream s
 
 ## Data decisions
 
-| Decision | Choice | Why |
-| --- | --- | --- |
-| Sites | The 20 sites the EA register labels `RiverBathingWater` | The register's own label; lakes, estuaries and coastal sites behave differently and mostly lack upstream overflows |
-| Years | Samples from 2020 onwards (in practice 2021: only Ilkley and Wolvercote before 2024) | Spill monitoring is patchy before then |
-| Label | Fail if E. coli > 1000 or intestinal enterococci > 400 cfu/100 ml | E. coli alone missed failures at sites like Wolvercote |
-| Counts outside the lab's range | `<` treated as a pass; `>` at or above a limit treated as a fail | Below or above any limit respectively |
-| Duplicates | 30 reissued records removed (newest copy kept) | Ilkley's 2021 season was reissued in May 2022 and would have counted twice |
-| Flagged, not dropped | Discountable samples (3, all fail) and samples < 4 days after the previous one (113) | They are real pollution events |
-| Sample time zone | Treated as UK clock time, converted to UTC | The API gives no time zone; if wrong, samples sit up to 1 h early, which can't leak future data |
-| Rain | Average of the 3 nearest EA gauges (within 20 km); a gauge counts only with 80% of readings present in the window; "Suspect" readings kept | Averaging limits the effect of one bad gauge; dropping Suspect readings (16%) would leave gaps |
-| Flow | Nearest EA flow station on the same river (within 40 km); none for Chester (no Dee station) | Flow from a tributary or another river is worse than none |
-| Spills | Thames Water start/stop alerts paired into spills; zero-length spills dropped; monitor offline periods kept as a feature | EDM alerts indicate spills rather than confirm them |
-| Upstream rule | Follow the flow-direction grid downstream from each overflow; upstream if the path passes within 300 m of the site | Excludes downstream overflows automatically; distances run 5–10% long because the path zigzags across 50 m grid cells |
-| No leakage | Every feature uses only data from before the sample time, checked by a built-in test | The model may only see what was known when the sample was taken |
-| Split | Train 2021–2025, test 2026 | Tests on a season the model has never seen |
-| Thresholds | Chosen on training data only, from leave-one-season-out predictions | Keeps test results honest and matches the test design |
-| Site history feature | Each training sample's site failure rate is learned from the other training seasons only, rebuilt inside every cross-validation fold | A leave-one-out rate leaks the label: failing samples always get a slightly lower rate than passing ones at the same site, which tree models learn as a fake pattern |
-| Model comparison | Paired bootstrap of the PR-AUC difference against the rain rule, on the same test resamples | Answers "is it really better?" directly, rather than comparing separate intervals |
+Every choice made while building the dataset and models, and why, is listed in [DATA_DECISIONS.md](DATA_DECISIONS.md): which sites, the failure label, how rain, flow and spills were linked to each sample, the upstream rule, the leakage checks and the train/test split.
 
 ## Limitations
 

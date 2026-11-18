@@ -82,6 +82,24 @@ On their own they look promising: samples after the sunniest quarter of days fai
 
 In 2026 the extra 39 alerts caught 8 more failures (21% of them failed, above the 16% base rate). For a swimmer that is the better trade: a missed failure is worse than an unnecessary warning. It is also how a live service could work, since both inputs are known on the morning of a swim.
 
+### Choosing the alert threshold
+
+The thresholds above maximise F1, which treats a missed failure and a false alarm as equally bad. For a swimmer they aren't: a missed failure means swimming in polluted water, while a false alarm means skipping a swim that would have been fine. So every model was also run at a high-recall threshold: the highest one that catches 80% of failures in 2021–2025, again set on training data only.
+
+| Rule (2026 test season) | Alert when | Flagged | Failures caught | Precision |
+| --- | --- | --- | --- | --- |
+| Rain rule, balanced | > 2.7 mm in 48 h | 107 | 40 of 62 | 37% |
+| Rain rule, high-recall | > 0.5 mm in 48 h | 176 | 45 of 62 | 26% |
+| Logistic regression (all features), high-recall | score > 0.39 | 130 | 46 of 62 | 35% |
+| Two-part rule, balanced | > 2.7 mm OR last result failed | 146 | 48 of 62 | 33% |
+| Two-part rule, high-recall | > 0.5 mm OR last result failed | 203 | 51 of 62 | 25% |
+
+- **Rain alone can't reach 80% in 2026.** The 0.5 mm rule catches all 45 failures that followed rain and none of the 17 that followed dry weather. Every weather model lands at 73–77% recall.
+- **At high recall the logistic regression pays off:** one more failure caught than the rain rule (46 vs 45) with 46 fewer alerts.
+- **Lowering the rain threshold within the two-part rule isn't worth it.** In 2026 it adds 57 alerts to catch 3 more failures; only 5% of those extra alerts failed, below the 16% base rate. In 2021–2025: 123 extra alerts, 12% failed, against a 27% base rate. Adding the last result did the opposite: its extra alerts failed more often than average.
+
+So the recall-first choice is the two-part rule at the balanced rain threshold: 48 of 62 failures caught (77%) from 146 alerts. Going further mostly adds warnings on days that were safer than average.
+
 ### Spills experiment: 4 Thames sites, 2023–2026
 
 179 samples, 10 failures. With so few failures, comparing prediction scores would be close to meaningless, so the question was asked statistically: does adding upstream spill hours improve a model that already knows rain?

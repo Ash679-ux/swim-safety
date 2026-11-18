@@ -4,8 +4,8 @@ Run from the project root (after 09_models.py):
     python scripts/12_error_analysis.py
 
 1. Calibration: when a model says "40% chance of failing", do about 40% of
-   those samples fail? (The models were trained with balanced class weights,
-   which push probabilities up, so expect over-prediction.)
+   those samples fail? Compares the logistic regression's raw scores (inflated
+   by balanced class weights) with its recalibrated probabilities.
 2. Missed failures: for the best model and the rain rule, which failures were
    missed, and what do they have in common (dry weather? one site? only just
    over the limit? which bacterium?)
@@ -24,7 +24,8 @@ from plotstyle import AXIS, FIG, INK2, MUTED, SERIES, SURFACE, subtitle, wilson
 ECOLI_LIMIT, IE_LIMIT = 1000, 400
 BEST = "logreg_all"
 MODELS = ["site_rate", "rain_rule", "logreg_rain", "logreg_all", "forest_all"]
-PROB_MODELS = [("logreg_all", "Logistic regression, all features"), ("forest_all", "Random forest, all features")]
+PROB_MODELS = [("score_logreg_all", "Logistic regression, raw scores"),
+               ("prob_logreg_all", "Logistic regression, recalibrated")]
 N_BINS = 5
 
 pred = pd.read_csv("results/test_predictions.csv")
@@ -50,10 +51,13 @@ print("1. Calibration (predicted probability vs what actually happened)")
 fig, ax = plt.subplots(figsize=(6.4, 7))
 ax.plot([0, 1], [0, 1], color=AXIS, linewidth=1.5, zorder=1, label="perfect calibration")
 ratios = []
-for (m, name), colour, off in zip(PROB_MODELS, SERIES, (-0.006, 0.006)):
-    p = pred[f"score_{m}"]
+for (col, name), colour, off in zip(PROB_MODELS, SERIES, (-0.006, 0.006)):
+    if col not in pred:
+        print(f"   {col} not found: rerun 09_models.py first")
+        continue
+    p = pred[col]
     bins = pd.qcut(p, N_BINS, duplicates="drop")
-    tab = pred.groupby(bins, observed=True).agg(pred_mean=(f"score_{m}", "mean"), obs=("fail", "mean"),
+    tab = pred.groupby(bins, observed=True).agg(pred_mean=(col, "mean"), obs=("fail", "mean"),
                                                 k=("fail", "sum"), n=("fail", "size"))
     lo, hi = (np.array(v) for v in zip(*[wilson(k, n) for k, n in zip(tab["k"], tab["n"])]))
     brier = np.mean((p - y) ** 2)

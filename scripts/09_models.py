@@ -13,13 +13,22 @@ Models, from simplest to most complex:
   logreg_rain    logistic regression on rain + season only
   logreg_all     logistic regression on rain + flow + season + site rate
   forest_all     random forest on the same features
+  gboost_all     gradient boosting on the same features, constrained so that more
+                 rain (and a dirtier site history) can only raise the predicted risk
 
 Failures are the minority (about 1 in 5), so models are judged on:
   PR-AUC     area under the precision-recall curve (random guessing scores the
              test failure rate, printed with the results)
   ROC-AUC    0.5 = guessing at random
   precision / recall / F1 for failures, at a threshold chosen on the TRAINING
-  data (out-of-fold), never tuned on the test set.
+  data, never tuned on the test set.
+Thresholds use leave-one-season-out predictions on the training years (each
+season predicted by a model that never saw it), matching the test design.
+
+Calibration: the models are trained with balanced class weights, which
+inflate probabilities. A logistic (Platt) recalibration is fitted on the
+leave-one-season-out training predictions and applied to the test scores.
+It doesn't change the ranking (so PR-AUC is unchanged), only the probabilities.
 95% intervals come from 1000 bootstrap resamples of the test set.
 
 Writes results/model_results.csv and results/test_predictions.csv.
@@ -28,13 +37,13 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.inspection import permutation_importance
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (average_precision_score, f1_score, precision_recall_curve,
                              precision_score, recall_score, roc_auc_score)
-from sklearn.model_selection import StratifiedKFold, cross_val_predict
+from sklearn.model_selection import LeaveOneGroupOut, cross_val_predict
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import FunctionTransformer, StandardScaler
 
@@ -80,7 +89,28 @@ def forest():
                                                 class_weight="balanced_subsample", random_state=SEED, n_jobs=-1))
 
 
-cv = StratifiedKFold(5, shuffle=True, random_state=SEED)
+def gboost(feats):
+    # +1 = predicted risk may only rise as the feature rises (rain, site history)
+    mono = [1 if f in RAIN + SITE else 0 for f in feats]
+    return HistGradientBoostingClassifier(max_iter=300, learning_rate=0.05, max_leaf_nodes=15,
+                                          min_samples_leaf=20, l2_regularization=1.0,
+                                          monotonic_cst=mono, class_weight="balanced", random_state=SEED)
+
+
+# Leave-one-season-out: each training season is predicted by a model that never saw it
+cv = LeaveOneGroupOut()
+groups = train["year"].to_numpy()
+
+
+def platt(oof, y):
+    """Fit a recalibration map (logistic on the logit of the score)."""
+    z = np.log(np.clip(oof, 1e-6, 1 - 1e-6) / (1 - np.clip(oof, 1e-6, 1 - 1e-6)))
+    cal = LogisticRegression().fit(z.reshape(-1, 1), y)
+
+    def apply(p):
+        zz = np.log(np.clip(p, 1e-6, 1 - 1e-6) / (1 - np.clip(p, 1e-6, 1 - 1e-6)))
+        return cal.predict_proba(zz.reshape(-1, 1))[:, 1]
+    return apply
 
 
 def best_threshold(y, score):
@@ -124,15 +154,23 @@ rows.append(evaluate("site_rate", train["site_rate"].to_numpy(), test["site_rate
 r48_tr, r48_te = train["rain_48h"].fillna(0).to_numpy(), test["rain_48h"].fillna(0).to_numpy()
 rows.append(evaluate("rain_rule", r48_tr, r48_te, ["rain_48h"]))
 # 3-5. Learned models
+ALL = RAIN + FLOW + SEASON + SITE
 models = {"logreg_rain": (logreg, RAIN + SEASON),
-          "logreg_all": (logreg, RAIN + FLOW + SEASON + SITE),
-          "forest_all": (forest, RAIN + FLOW + SEASON + SITE)}
-fitted = {}
+          "logreg_all": (logreg, ALL),
+          "forest_all": (forest, ALL),
+          "gboost_all": (lambda: gboost(ALL), ALL)}
+fitted, calib = {}, []
 for name, (make, feats) in models.items():
-    oof = cross_val_predict(make(), train[feats], y_tr, cv=cv, method="predict_proba")[:, 1]
+    oof = cross_val_predict(make(), train[feats], y_tr, cv=cv, groups=groups, method="predict_proba")[:, 1]
     m = make().fit(train[feats], y_tr)
     fitted[name] = (m, feats)
-    rows.append(evaluate(name, oof, m.predict_proba(test[feats])[:, 1], feats))
+    s_te = m.predict_proba(test[feats])[:, 1]
+    rows.append(evaluate(name, oof, s_te, feats))
+    cal = platt(oof, y_tr)
+    test[f"prob_{name}"] = cal(s_te)
+    calib.append({"model": name, "mean_raw": s_te.mean(), "mean_calibrated": test[f"prob_{name}"].mean(),
+                  "actual": y_te.mean(), "brier_raw": np.mean((s_te - y_te) ** 2),
+                  "brier_calibrated": np.mean((test[f"prob_{name}"] - y_te) ** 2)})
 
 res = pd.DataFrame(rows)
 pd.set_option("display.width", 200)
@@ -141,6 +179,9 @@ print(f"\nTest season 2026: {int(y_te.sum())} failures in {len(y_te)} samples "
 show = res[["model", "PR_AUC", "PR_AUC_lo", "PR_AUC_hi", "ROC_AUC", "precision", "recall", "F1",
             "flagged", "caught", "PR_AUC_seen_sites", "PR_AUC_new_sites"]]
 print(show.to_string(index=False, float_format=lambda x: f"{x:.2f}"))
+print("\nCalibration on 2026 (mean predicted probability vs actual failure rate; Brier: lower is better):")
+print(pd.DataFrame(calib).to_string(index=False, float_format=lambda x: f"{x:.3f}"))
+print("  Recalibration is fitted on the training years, so it can't correct for 2026 being a cleaner year.")
 rule_mm = res.loc[res["model"] == "rain_rule", "threshold"].iloc[0]
 print(f"\nRain rule chosen on training data: fail if more than {rule_mm:.1f} mm fell in the 48 h before sampling")
 
@@ -155,5 +196,5 @@ for i in order:
 
 res.to_csv(RESULTS / "model_results.csv", index=False)
 keep = ["id", "site", "sample_time_utc", "fail", "ecoli", "ie", "seen_site", "rain_48h", "flow_rel", "site_rate"]
-test[keep + [c for c in test.columns if c.startswith("score_")]].to_csv(RESULTS / "test_predictions.csv", index=False)
+test[keep + [c for c in test.columns if c.startswith(("score_", "prob_"))]].to_csv(RESULTS / "test_predictions.csv", index=False)
 print(f"\nSaved {RESULTS/'model_results.csv'} and {RESULTS/'test_predictions.csv'}")

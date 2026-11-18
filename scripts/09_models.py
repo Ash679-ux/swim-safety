@@ -46,6 +46,7 @@ from sklearn.metrics import (average_precision_score, f1_score, precision_recall
 from sklearn.model_selection import LeaveOneGroupOut, cross_val_predict
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import FunctionTransformer, StandardScaler
+from tqdm import tqdm
 
 SEED = 0
 RESULTS = Path("results")
@@ -123,7 +124,7 @@ def best_threshold(y, score):
 def bootstrap_ci(y, s, metric, n=1000):
     rng = np.random.default_rng(SEED)
     vals = []
-    for _ in range(n):
+    for _ in tqdm(range(n), desc="  uncertainty ranges", unit="resample", leave=False):
         i = rng.integers(0, len(y), len(y))
         if y[i].min() != y[i].max():
             vals.append(metric(y[i], s[i]))
@@ -148,11 +149,14 @@ def evaluate(name, s_tr_oof, s_te, features):
 
 
 rows = []
+bar = tqdm(total=2 + 4, desc="Models", unit="model")
 # 1. Site failure rate only
 rows.append(evaluate("site_rate", train["site_rate"].to_numpy(), test["site_rate"].to_numpy(), SITE))
 # 2. Rain rule: score is rain in the last 48 h; the threshold IS the rule's X mm
 r48_tr, r48_te = train["rain_48h"].fillna(0).to_numpy(), test["rain_48h"].fillna(0).to_numpy()
+bar.update(1)
 rows.append(evaluate("rain_rule", r48_tr, r48_te, ["rain_48h"]))
+bar.update(1)
 # 3-5. Learned models
 ALL = RAIN + FLOW + SEASON + SITE
 models = {"logreg_rain": (logreg, RAIN + SEASON),
@@ -161,6 +165,7 @@ models = {"logreg_rain": (logreg, RAIN + SEASON),
           "gboost_all": (lambda: gboost(ALL), ALL)}
 fitted, calib = {}, []
 for name, (make, feats) in models.items():
+    bar.set_postfix_str(name)
     oof = cross_val_predict(make(), train[feats], y_tr, cv=cv, groups=groups, method="predict_proba")[:, 1]
     m = make().fit(train[feats], y_tr)
     fitted[name] = (m, feats)
@@ -171,6 +176,8 @@ for name, (make, feats) in models.items():
     calib.append({"model": name, "mean_raw": s_te.mean(), "mean_calibrated": test[f"prob_{name}"].mean(),
                   "actual": y_te.mean(), "brier_raw": np.mean((s_te - y_te) ** 2),
                   "brier_calibrated": np.mean((test[f"prob_{name}"] - y_te) ** 2)})
+    bar.update(1)
+bar.close()
 
 res = pd.DataFrame(rows)
 pd.set_option("display.width", 200)
@@ -188,6 +195,7 @@ print(f"\nRain rule chosen on training data: fail if more than {rule_mm:.1f} mm 
 # What drives the best learned model? Permutation importance on the test set.
 best = res[res["model"].isin(models)].sort_values("PR_AUC", ascending=False)["model"].iloc[0]
 m, feats = fitted[best]
+print(f"\nWorking out feature importance for {best} (30 shuffles per feature, may take a minute)...")
 imp = permutation_importance(m, test[feats], y_te, scoring="average_precision", n_repeats=30, random_state=SEED)
 order = np.argsort(-imp.importances_mean)
 print(f"\nPermutation importance for {best} (drop in test PR-AUC when the feature is shuffled):")

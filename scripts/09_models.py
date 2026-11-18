@@ -64,7 +64,7 @@ from sklearn.preprocessing import FunctionTransformer, StandardScaler
 from threadpoolctl import threadpool_limits
 from tqdm import tqdm
 
-from funcs import fast_ap, site_rate_by_other_seasons, site_rate_map, threshold_for_recall
+from funcs import fast_ap, site_rate_by_other_seasons, site_rate_map
 
 SEED = 0
 RECALL_TARGET = 0.8  # high-recall operating point: catch at least 4 in 5 training failures
@@ -181,6 +181,12 @@ def best_threshold(y, score):
     return t[np.nanargmax(f1[:-1])]
 
 
+def recall_threshold(y, score, target=RECALL_TARGET):
+    """Highest threshold that still catches `target` of the (out-of-fold) training failures."""
+    _, r, t = precision_recall_curve(y, score)
+    return t[np.flatnonzero(r[:-1] >= target)[-1]]
+
+
 # The same 1000 resamples of the test set for every model, so differences
 # between models can be compared resample by resample (a paired bootstrap).
 _rng = np.random.default_rng(SEED)
@@ -204,10 +210,9 @@ def evaluate(name, s_tr_oof, s_te, features):
            "recall": recall_score(y_te, pred), "F1": f1_score(y_te, pred),
            "flagged": int(pred.sum()), "caught": int((pred & y_te).sum()), "failures": int(y_te.sum())}
     # High-recall operating point, also set on the training predictions only
-    thr_hr = threshold_for_recall(y_tr, s_tr_oof, RECALL_TARGET)
+    thr_hr = recall_threshold(y_tr, s_tr_oof)
     pred_hr = (s_te >= thr_hr).astype(int)
-    row.update({"threshold_hr": thr_hr, "recall_train_hr": recall_score(y_tr, (s_tr_oof >= thr_hr).astype(int)),
-                "precision_hr": precision_score(y_te, pred_hr, zero_division=0),
+    row.update({"threshold_hr": thr_hr, "precision_hr": precision_score(y_te, pred_hr, zero_division=0),
                 "recall_hr": recall_score(y_te, pred_hr), "flagged_hr": int(pred_hr.sum()),
                 "caught_hr": int((pred_hr & y_te).sum())})
     for label, mask in [("seen", test["seen_site"].to_numpy()), ("new", ~test["seen_site"].to_numpy())]:
@@ -269,9 +274,9 @@ show = res[["model", "PR_AUC_train_cv", "PR_AUC", "PR_AUC_lo", "PR_AUC_hi", "ROC
             "flagged", "caught", "PR_AUC_seen_sites", "PR_AUC_new_sites"]]
 print(show.to_string(index=False, float_format=lambda x: f"{x:.2f}"))
 print(f"\nHigh-recall operating point (threshold set on training data to catch >= {RECALL_TARGET:.0%} of training failures):")
-hr = res[["model", "threshold_hr", "recall_train_hr", "recall_hr", "precision_hr", "flagged_hr", "caught_hr"]]
+hr = res[["model", "threshold_hr", "recall_hr", "precision_hr", "flagged_hr", "caught_hr"]]
 print(hr.to_string(index=False, float_format=lambda x: f"{x:.2f}",
-                   header=["model", "threshold", "recall_train", "recall_2026", "precision_2026", "flagged", "caught"]))
+                   header=["model", "threshold", "recall_2026", "precision_2026", "flagged", "caught"]))
 print("\nCalibration on 2026 (mean predicted probability vs actual failure rate; Brier: lower is better):")
 print(pd.DataFrame(calib).to_string(index=False, float_format=lambda x: f"{x:.3f}"))
 print("  Recalibration is fitted on the training years, so it can't correct for 2026 being a cleaner year.")

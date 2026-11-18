@@ -134,8 +134,6 @@ if "prev_exceed" in pred:
 # Shown at both operating points: the balanced (best-F1) rain threshold and the
 # high-recall one (both set on training data in 09_models.py).
 for point, col in [("balanced", "threshold"), ("high-recall", "threshold_hr")]:
-    if col not in res:
-        continue
     rule_mm = res.loc["rain_rule", col]
     print(f"\n   Two-part rule ({point}): rain > {rule_mm:.1f} mm in 48 h OR the last known result failed")
     for split, d in feat.groupby("split"):

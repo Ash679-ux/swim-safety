@@ -49,7 +49,6 @@ plt.close(fig)
 
 # ------------------------------------------- 2. precision-recall, 2026 test
 p = pd.read_csv("results/test_predictions.csv")
-res = pd.read_csv("results/model_results.csv").set_index("model")
 y = p["fail"].astype(int).to_numpy()
 models = [("site_rate", "Site failure rate only"), ("rain_rule", "Rain rule (48 h rain)"),
           ("logreg_all", "Logistic regression, all features"), ("forest_all", "Random forest, all features")]
@@ -58,13 +57,6 @@ for (col, name), colour in zip(models, SERIES):
     s = p[f"score_{col}"].to_numpy()
     prec, rec, _ = precision_recall_curve(y, s)
     ax.step(rec, prec, where="post", color=colour, label=f"{name} (PR-AUC {average_precision_score(y, s):.2f})")
-    # Where the alert thresholds (set on training data) land in 2026:
-    # filled dot = balanced (best F1), open dot = high-recall
-    if col in ("rain_rule", "logreg_all"):
-        for thr_col, face in [("threshold", colour), ("threshold_hr", SURFACE)]:
-            a = s >= res.loc[col, thr_col]
-            ax.plot((a & (y == 1)).sum() / y.sum(), (a & (y == 1)).sum() / max(a.sum(), 1), "o", markersize=9,
-                    markerfacecolor=face, markeredgecolor=colour, markeredgewidth=2, zorder=4)
 ax.axhline(y.mean(), color=MUTED, linestyle=(0, (4, 3)), linewidth=1.5)
 ax.text(0.01, y.mean() - 0.015, f"random guessing ({y.mean():.2f})", color=INK2, ha="left", va="top", fontsize=10)
 ax.set_xlim(0, 1.0)
@@ -72,9 +64,8 @@ ax.set_ylim(0, 1.02)
 ax.set_xlabel("Recall: share of failures caught")
 ax.set_ylabel("Precision: share of alerts that were failures")
 ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.16), ncol=2, fontsize=10)
-ax.set_title("Weather models beat site history; the rain rule does most of the work", pad=40)
-subtitle(ax, f"Unseen 2026 season: {int(y.sum())} failures in {len(y)} samples. Higher and further right is better.\n"
-         "Dots: alert thresholds set on training data (filled: balanced, open: high-recall).")
+ax.set_title("Weather models beat site history; the rain rule does most of the work", pad=26)
+subtitle(ax, f"Unseen 2026 season: {int(y.sum())} failures in {len(y)} samples. Higher and further right is better.")
 fig.tight_layout()
 fig.savefig(FIG / "2_precision_recall_2026.png", dpi=200)
 plt.close(fig)

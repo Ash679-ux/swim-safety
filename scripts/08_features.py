@@ -12,6 +12,15 @@ interval, so no reading that might cover time after t is used):
         river flow (m3/s) at t, flow relative to the station's median flow in
         the training years (so big and small rivers are comparable), and the
         ratio of flow now to flow 24 h earlier
+  flow_low, flow_high
+        how far flow is below / above normal, on a log scale
+        (max(0, -log flow_rel) and max(0, log flow_rel)), so the models can
+        give low flow its own effect: less water to dilute steady sources
+  temp_48h, temp_7d      mean air temperature (deg C) over the last 48 h / 7 days
+  sun_24h                sunlight energy over the last 24 h (MJ/m2)
+  sun_hours_24h          hours of bright sunshine over the last 24 h
+        (weather from 05b_weather.py: UV in sunlight kills bacteria, and
+        temperature affects how long they survive)
   month, day_of_year
   Thames sites only (spill history exists only for Thames Water):
   spill_h_{24,48,72}h_{10,25,50}km
@@ -101,6 +110,31 @@ def flow_at(s, t):
     return s["v"][i]
 
 
+def hourly_window(s, t, hours, how):
+    """Sum or mean of hourly values in (t - hours, t]. Each hourly value covers
+    the hour up to its timestamp, so nothing after t is used. Needs 80% of
+    the hours present, else NaN."""
+    i1 = np.searchsorted(s["t"], t, "right")
+    i0 = np.searchsorted(s["t"], t - hours * HOUR, "right")
+    n = s["cnt"][i1] - s["cnt"][i0]
+    if n < MIN_COVERAGE * hours:
+        return np.nan
+    total = s["cum"][i1] - s["cum"][i0]
+    return total / n if how == "mean" else total
+
+
+def weather_features(t, sid, wx):
+    f = {"temp_48h": np.nan, "temp_7d": np.nan, "sun_24h": np.nan, "sun_hours_24h": np.nan}
+    if sid in wx["temp_c"]:
+        f["temp_48h"] = hourly_window(wx["temp_c"][sid], t, 48, "mean")
+        f["temp_7d"] = hourly_window(wx["temp_c"][sid], t, 168, "mean")
+    if sid in wx["sw_wm2"]:
+        f["sun_24h"] = hourly_window(wx["sw_wm2"][sid], t, 24, "sum") * 3600 / 1e6  # W/m2 per hour -> MJ/m2
+    if sid in wx["sun_s"]:
+        f["sun_hours_24h"] = hourly_window(wx["sun_s"][sid], t, 24, "sum") / 3600
+    return f
+
+
 def site_features(t, gauges, rain, flow_st, flow, flow_median, spills, links_km, offline):
     """Features at time t. Spills/offline periods with no Stop yet have end = int64 max."""
     f = {}
@@ -115,6 +149,8 @@ def site_features(t, gauges, rain, flow_st, flow, flow_median, spills, links_km,
         f["flow_change_24h"] = now / before if before and before > 0 else np.nan
     else:
         f["flow"] = f["flow_rel"] = f["flow_change_24h"] = np.nan
+    lr = np.log(f["flow_rel"]) if f["flow_rel"] and f["flow_rel"] > 0 else np.nan
+    f["flow_low"], f["flow_high"] = max(0.0, -lr) if lr == lr else np.nan, max(0.0, lr) if lr == lr else np.nan
     if spills is not None:
         known = spills[spills["start"] <= t]
         end = np.minimum(known["end"].to_numpy(), t)  # as known at t
@@ -152,6 +188,12 @@ rain_df["t"] = ns(rain_df["time_utc"])
 flow_df = pd.read_csv(INTERIM / "flow_15min.csv")
 flow_df["t"] = ns(flow_df["time_utc"])
 rain, flow = build_series(rain_df, "mm"), build_series(flow_df, "m3s")
+wx_file = INTERIM / "weather_hourly.csv"
+if not wx_file.exists():
+    raise SystemExit("data/interim/weather_hourly.csv not found: run scripts/05b_weather.py first")
+wx_df = pd.read_csv(wx_file).rename(columns={"id": "station"})
+wx_df["t"] = ns(wx_df["time_utc"])
+wx = {c: build_series(wx_df, c) for c in ["temp_c", "sw_wm2", "sun_s"]}
 train_flow = flow_df[pd.to_datetime(flow_df["time_utc"], utc=True, format="ISO8601").dt.year < TEST_YEAR]
 flow_median = train_flow.groupby("station")["m3s"].median().to_dict()
 
@@ -176,12 +218,14 @@ for sid, g in links.groupby("id"):
     site_spills[sid] = sp
 
 # ---------------------------------------------------------------- compute
-def features_for(row, rain_, flow_, spills_override=None, offline_override=None):
+def features_for(row, rain_, flow_, wx_, spills_override=None, offline_override=None):
     sid = row["id"]
     sp = spills_override if spills_override is not None else site_spills.get(sid)
     off = offline_override if offline_override is not None else offline
-    return site_features(row["t"], gauges.get(sid, []), rain_, flow_station.get(sid), flow_,
-                         flow_median, sp, site_links.get(sid), off)
+    f = site_features(row["t"], gauges.get(sid, []), rain_, flow_station.get(sid), flow_,
+                      flow_median, sp, site_links.get(sid), off)
+    f.update(weather_features(row["t"], sid, wx_))
+    return f
 
 
 def as_known_at(events, t):
@@ -194,7 +238,7 @@ def as_known_at(events, t):
 
 rows = []
 for _, r in tqdm(samples.iterrows(), total=len(samples), desc="Building features", unit="sample"):
-    rows.append(features_for(r, rain, flow))
+    rows.append(features_for(r, rain, flow, wx))
 feats = pd.DataFrame(rows, index=samples.index)
 
 local = pd.to_datetime(samples["sample_time_utc"], utc=True, format="ISO8601").dt.tz_convert("Europe/London")
@@ -217,7 +261,8 @@ for i in tqdm(test_idx, desc="Leakage test", unit="sample"):
     t = r["t"]
     sp = site_spills.get(r["id"])
     sp = as_known_at(sp, t) if sp is not None else None
-    again = features_for(r, truncate(rain, t), truncate(flow, t), sp, as_known_at(offline, t))
+    wx_t = {c: truncate(series, t) for c, series in wx.items()}
+    again = features_for(r, truncate(rain, t), truncate(flow, t), wx_t, sp, as_known_at(offline, t))
     a, b = pd.Series(again), feats.loc[i, list(again)]
     same = np.isclose(a.astype(float), b.astype(float), equal_nan=True)
     if not same.all():
@@ -235,6 +280,9 @@ for c in fcols:
     print(f"  {c:26s} {base[c].isna().mean():6.1%}")
 print("\nFailure rate by 48 h rainfall (sanity check: should rise with rain):")
 q = pd.qcut(out["rain_48h"], 4, duplicates="drop")
+print(out.groupby(q, observed=True)["fail"].agg(["size", "mean"]).round(3).to_string())
+print("\nFailure rate by sunlight in the last 24 h (expect lower risk on sunnier days, all else equal):")
+q = pd.qcut(out["sun_24h"], 4, duplicates="drop")
 print(out.groupby(q, observed=True)["fail"].agg(["size", "mean"]).round(3).to_string())
 th = out[out["spill_data_ok"]]
 if len(th):

@@ -1,6 +1,6 @@
 # Is the river safe to swim in today?
 
-Predicting whether a sample at one of England's 20 river bathing sites will fail its bacteria limits, from recent rain, river flow and upstream sewage spills. The dataset was built from four public APIs (about 1,000 samples, 4 million rain and flow readings, 73,000 sewage spills), not downloaded ready-made.
+Predicting whether a sample at one of England's 20 river bathing sites will fail its bacteria limits, from recent rain, river flow and upstream sewage spills. The dataset was built from five public sources (about 1,000 samples, 4 million rain and flow readings, 73,000 sewage spills), not downloaded ready-made.
 
 ![Failure rate by rain in the previous 48 hours](results/figures/1_failure_rate_by_rain.png)
 
@@ -25,6 +25,7 @@ Given the rain and the sewage spills upstream in the last few days, will today's
 | Bathing-water samples and site register | [EA Bathing Water Quality API](https://environment.data.gov.uk/bwq/) | Labels, site list and locations |
 | Rainfall and river flow (15-minute) | [EA Hydrology API](https://environment.data.gov.uk/hydrology/) | Rain and flow features |
 | Sewage spill alerts (start/stop, April 2022 onwards) | [Thames Water Open Data](https://data.thameswater.co.uk/s/), discharge alerts v2 | Spill features for the 4 Thames sites |
+| Hourly air temperature, sunlight and sunshine (ERA5 reanalysis) | [Open-Meteo historical weather API](https://open-meteo.com/en/docs/historical-weather-api), CC BY 4.0 | Temperature and sunlight features (UV in sunlight kills bacteria) |
 | Flow-direction grid of the Thames basin | [POOPy](https://github.com/AlexLipp/POOPy) by Alex Lipp, archived on Zenodo | Deciding which overflows are upstream of each site |
 
 Only Thames Water publishes spill *history*; other water companies share only what is spilling now. So spill features exist for the 4 Thames sites, and the spills question is tested there.
@@ -113,6 +114,7 @@ Or run steps one at a time (or `./run_all.sh 06` to start from step 06):
 ```bash
 python scripts/04_samples.py           # clean samples and site table
 python scripts/05_hydrology.py         # rain gauges and flow stations
+python scripts/05b_weather.py          # air temperature and sunlight at each site
 python scripts/06_spills.py            # Thames spill history -> spill events
 python scripts/07_link_upstream.py     # which overflows are upstream of each site (+ map check)
 python scripts/08_features.py          # features, with a leakage test

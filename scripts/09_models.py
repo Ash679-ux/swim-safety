@@ -15,6 +15,7 @@ Models, from simplest to most complex:
   forest_all     random forest on the same features
   gboost_all     gradient boosting on the same features, constrained so that more
                  rain (and a dirtier site history) can only raise the predicted risk
+  logreg_weather logreg_all plus low flow, air temperature and sunlight
 
 Failures are the minority (about 1 in 5), so models are judged on:
   PR-AUC     area under the precision-recall curve (random guessing scores the
@@ -67,6 +68,9 @@ RAIN = ["rain_6h", "rain_24h", "rain_48h", "rain_72h", "rain_7d"]
 FLOW = ["flow_rel", "flow_change_24h"]
 SEASON = ["month", "day_of_year"]
 SITE = ["site_rate"]
+# Added after the error analysis: low flow (less dilution) and weather
+# (sunlight kills bacteria; temperature affects survival).
+EXTRA = ["flow_low", "temp_48h", "temp_7d", "sun_24h", "sun_hours_24h"]
 
 df = pd.read_csv("data/processed/features.csv")
 train, test = df[df["split"] == "train"].copy(), df[df["split"] == "test"].copy()
@@ -243,7 +247,7 @@ def record(name, oof, s_te, feats):
 
 
 timing = {}
-bar = tqdm(total=6, desc="Models", unit="model")
+bar = tqdm(total=7, desc="Models", unit="model")
 # 1. Site failure rate only
 record("site_rate", site_rate_oof(), test["site_rate"].to_numpy(), SITE)
 bar.update(1)
@@ -256,7 +260,8 @@ ALL = RAIN + FLOW + SEASON + SITE
 models = {"logreg_rain": (logreg, RAIN + SEASON),
           "logreg_all": (logreg, ALL),
           "forest_all": (forest, ALL),
-          "gboost_all": (gboost, ALL)}
+          "gboost_all": (gboost, ALL),
+          "logreg_weather": (logreg, ALL + EXTRA)}
 fitted, calib, probs = {}, [], {}
 for name, (make, feats) in models.items():
     bar.set_postfix_str(name)
@@ -294,6 +299,12 @@ for name in [r["model"] for r in rows if r["model"] != "rain_rule"]:
     verdict = "better" if lo > 0 else "worse" if hi < 0 else "can't tell apart"
     print(f"  {name:12s} {d.mean():+.3f} ({lo:+.3f} to {hi:+.3f}); better in {(d > 0).mean():.0%} of resamples -> {verdict}")
 pd.DataFrame(diffs).to_csv(RESULTS / "model_vs_rain_rule.csv", index=False)
+
+# Do the extra features help? Same model, with vs without them.
+d = boots["logreg_weather"] - boots["logreg_all"]
+lo, hi = np.percentile(d, [2.5, 97.5])
+print(f"\nAdding low flow + temperature + sunlight to the full logistic regression: "
+      f"{d.mean():+.3f} PR-AUC ({lo:+.3f} to {hi:+.3f}); better in {(d > 0).mean():.0%} of resamples")
 rule_mm = res.loc[res["model"] == "rain_rule", "threshold"].iloc[0]
 print(f"\nRain rule chosen on training data: fail if more than {rule_mm:.1f} mm fell in the 48 h before sampling")
 

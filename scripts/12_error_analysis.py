@@ -23,7 +23,7 @@ from plotstyle import AXIS, FIG, INK2, MUTED, SERIES, SURFACE, subtitle, wilson
 
 ECOLI_LIMIT, IE_LIMIT = 1000, 400
 BEST = "logreg_all"
-MODELS = ["site_rate", "rain_rule", "logreg_rain", "logreg_all", "forest_all"]
+MODELS = ["site_rate", "rain_rule", "logreg_rain", "logreg_all", "forest_all", "gboost_all", "logreg_weather"]
 PROB_MODELS = [("score_logreg_all", "Logistic regression, raw scores"),
                ("prob_logreg_all", "Logistic regression, recalibrated")]
 N_BINS = 5
@@ -42,7 +42,8 @@ pred["times_limit"] = np.maximum(pred["ecoli"] / ECOLI_LIMIT, pred["ie"] / IE_LI
 pred["rain_group"] = pd.cut(pred["rain_48h"], [-np.inf, 0.5, 4, np.inf], labels=["dry (<= 0.5 mm)", "light (0.5-4 mm)", "wet (> 4 mm)"])
 pred["severity"] = pd.cut(pred["times_limit"], [0, 2, 5, np.inf], labels=["1-2x limit", "2-5x limit", "> 5x limit"])
 for m in MODELS:
-    pred[f"alert_{m}"] = pred[f"score_{m}"] >= res.loc[m, "threshold"]
+    if f"score_{m}" in pred and m in res.index:
+        pred[f"alert_{m}"] = pred[f"score_{m}"] >= res.loc[m, "threshold"]
 y = pred["fail"]
 print(f"2026 test season: {len(pred)} samples, {int(y.sum())} failures ({y.mean():.1%})\n")
 
@@ -109,6 +110,13 @@ print(f"\n3. Failures missed by all four weather models: {len(all_missed)} of {l
 print(all_missed[cols].sort_values("date").round(2).to_string(index=False))
 dry = (all_missed["rain_48h"] <= 0.5).mean() if len(all_missed) else np.nan
 print(f"   {dry:.0%} of these came after a dry 48 h: something other than recent rain caused them.")
+
+# Did low flow + temperature + sunlight help with the dry-weather failures?
+dry_fails = fails[fails["rain_48h"] <= 0.5]
+for m in ["logreg_all", "logreg_weather"]:
+    if f"alert_{m}" in pred:
+        print(f"   dry-weather failures caught by {m}: {int(dry_fails[f'alert_{m}'].sum())} of {len(dry_fails)}; "
+              f"all failures caught: {int(fails[f'alert_{m}'].sum())} of {len(fails)}")
 
 # --------------------------------------------------------- 4. false alarms
 fa = pred[pred[f"alert_{BEST}"] & ~y]

@@ -13,7 +13,7 @@ FROM=${1:-04}
 TO=${2:-12}
 start=$SECONDS
 
-for script in scripts/[0-9][0-9]_*.py; do
+for script in scripts/[0-9][0-9]*_*.py; do  # includes 05b_weather.py, right after 05
     step=$(basename "$script" | cut -c1-2)
     if ((10#$step < 10#$FROM || 10#$step > 10#$TO)); then
         continue

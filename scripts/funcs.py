@@ -124,3 +124,25 @@ def fast_ap(y, s):
     tps = np.cumsum(y_s)[last]
     precision, recall = tps / (last + 1), tps / tps[-1]
     return float(np.sum(np.diff(np.r_[0.0, recall]) * precision))
+
+
+RESULT_LAG_DAYS = 2  # lab results (bacteria cultures) are back about 2 days after sampling
+
+
+def previous_result(samples, lag_days=RESULT_LAG_DAYS):
+    """For each sample, the site's most recent earlier result that would already
+    be known: taken at least `lag_days` before, in the same season. Returns
+    prev_exceed (log10 of the larger of E. coli/1000 and enterococci/400, so
+    > 0 means the previous sample failed) and days_since_prev. NaN for the
+    first sample of a season. Needs columns id, year, t (ns), ecoli, ie."""
+    out = pd.DataFrame(np.nan, index=samples.index, columns=["prev_exceed", "days_since_prev"])
+    ratio = np.log10(np.maximum(samples["ecoli"] / 1000, samples["ie"] / 400).clip(lower=1e-3))
+    day = 24 * HOUR
+    for _, g in samples.groupby(["id", "year"]):
+        g = g.sort_values("t")
+        t, r = g["t"].to_numpy(), ratio.loc[g.index].to_numpy()
+        j = np.searchsorted(t, t - lag_days * day, side="right") - 1  # last sample at or before t - lag
+        ok = j >= 0
+        out.loc[g.index[ok], "prev_exceed"] = r[j[ok]]
+        out.loc[g.index[ok], "days_since_prev"] = (t[ok] - t[j[ok]]) / day
+    return out

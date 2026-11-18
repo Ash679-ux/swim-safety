@@ -18,12 +18,13 @@ and results/false_alarms.csv.
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from sklearn.metrics import average_precision_score
 
 from plotstyle import AXIS, FIG, SERIES, SURFACE, subtitle, wilson
 
 ECOLI_LIMIT, IE_LIMIT = 1000, 400
 BEST = "logreg_all"
-MODELS = ["site_rate", "rain_rule", "logreg_rain", "logreg_all", "forest_all", "gboost_all", "logreg_weather"]
+MODELS = ["site_rate", "rain_rule", "logreg_rain", "logreg_all", "forest_all", "gboost_all", "logreg_weather", "logreg_history"]
 PROB_MODELS = [("score_logreg_all", "Logistic regression, raw scores"),
                ("prob_logreg_all", "Logistic regression, recalibrated")]
 N_BINS = 5
@@ -111,12 +112,21 @@ print(all_missed[cols].sort_values("date").round(2).to_string(index=False))
 dry = (all_missed["rain_48h"] <= 0.5).mean() if len(all_missed) else np.nan
 print(f"   {dry:.0%} of these came after a dry 48 h: something other than recent rain caused them.")
 
-# Did low flow + temperature + sunlight help with the dry-weather failures?
+# Did the added features help with the dry-weather failures? Two views:
+# caught at the model's own threshold, and how well it RANKS dry samples
+# (PR-AUC among dry samples only: can it tell which dry days are risky?)
+dry_all = pred[pred["rain_48h"] <= 0.5]
 dry_fails = fails[fails["rain_48h"] <= 0.5]
-for m in ["logreg_all", "logreg_weather"]:
+print(f"\n   Dry-weather samples: {len(dry_all)}, of which {len(dry_fails)} failed "
+      f"(random ranking gives PR-AUC {dry_all['fail'].mean():.2f})")
+for m in ["logreg_all", "logreg_weather", "logreg_history"]:
     if f"alert_{m}" in pred:
-        print(f"   dry-weather failures caught by {m}: {int(dry_fails[f'alert_{m}'].sum())} of {len(dry_fails)}; "
-              f"all failures caught: {int(fails[f'alert_{m}'].sum())} of {len(fails)}")
+        ap = average_precision_score(dry_all["fail"], dry_all[f"score_{m}"])
+        print(f"   {m:15s} dry failures caught {int(dry_fails[f'alert_{m}'].sum())} of {len(dry_fails)}; "
+              f"PR-AUC on dry samples {ap:.2f}; all failures caught {int(fails[f'alert_{m}'].sum())} of {len(fails)}")
+if "prev_exceed" in pred:
+    after_fail = (dry_fails["prev_exceed"] > 0).sum()
+    print(f"   {after_fail} of the {len(dry_fails)} dry-weather failures came straight after a known failure at the same site")
 
 # --------------------------------------------------------- 4. false alarms
 fa = pred[pred[f"alert_{BEST}"] & ~y]

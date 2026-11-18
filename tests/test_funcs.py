@@ -135,3 +135,27 @@ def test_fast_ap_matches_sklearn(seed):
     y = (rng.random(300) < 0.2).astype(int)
     s = np.round(rng.random(300), 2)  # rounding creates ties
     assert fast_ap(y, s) == pytest.approx(average_precision_score(y, s), abs=1e-12)
+
+
+# ------------------------------------------------------- previous result
+def test_previous_result_only_uses_results_already_known():
+    from funcs import previous_result
+    day = 24 * HOUR
+    s = pd.DataFrame({"id": "a", "year": 2026, "t": T0 + day * np.array([0, 1, 7, 14]),
+                      "ecoli": [5000, 100, 100, 100], "ie": [10, 10, 10, 800]})
+    prev = previous_result(s)
+    assert np.isnan(prev.loc[0, "prev_exceed"])              # first of the season
+    assert np.isnan(prev.loc[1, "prev_exceed"])              # day-0 result isn't back yet on day 1
+    assert prev.loc[2, "prev_exceed"] == pytest.approx(np.log10(0.1))  # day-1 result: E. coli at 0.1x the limit
+    assert prev.loc[2, "days_since_prev"] == pytest.approx(6)
+    assert (prev["days_since_prev"].dropna() >= 2).all()
+
+
+def test_previous_result_failed_sample_is_positive_and_seasons_dont_mix():
+    from funcs import previous_result
+    day = 24 * HOUR
+    s = pd.DataFrame({"id": ["a", "a", "a"], "year": [2025, 2026, 2026],
+                      "t": T0 + day * np.array([0, 300, 310]), "ecoli": [9000, 3000, 10], "ie": [10, 10, 10]})
+    prev = previous_result(s)
+    assert np.isnan(prev.loc[1, "prev_exceed"])              # last season's result isn't carried over
+    assert prev.loc[2, "prev_exceed"] == pytest.approx(np.log10(3.0))   # 3x the E. coli limit

@@ -72,6 +72,9 @@ SITE = ["site_rate"]
 # Added after the error analysis: low flow (less dilution) and weather
 # (sunlight kills bacteria; temperature affects survival).
 EXTRA = ["flow_low", "temp_48h", "temp_7d", "sun_24h", "sun_hours_24h"]
+# Added for the dry-weather failures: the site's last known result (pollution
+# that persists for days or weeks) and rain over the last fortnight (slow drainage).
+HISTORY = ["prev_exceed", "days_since_prev", "rain_14d"]
 
 df = pd.read_csv("data/processed/features.csv")
 train, test = df[df["split"] == "train"].copy(), df[df["split"] == "test"].copy()
@@ -92,7 +95,7 @@ def log1p_pos(X):
 def logreg(feats):
     # Rain and flow are heavily skewed: log1p keeps big storms from dominating.
     # Season and site rate are left on their own scale.
-    skewed = [f for f in feats if f in RAIN + FLOW]
+    skewed = [f for f in feats if f in RAIN + FLOW + ["rain_14d"]]
     other = [f for f in feats if f not in skewed]
     prep = ColumnTransformer([
         ("skewed", make_pipeline(SimpleImputer(strategy="median"), FunctionTransformer(log1p_pos)), skewed),
@@ -195,7 +198,7 @@ def evaluate(name, s_tr_oof, s_te, features):
            "recall": recall_score(y_te, pred), "F1": f1_score(y_te, pred),
            "flagged": int(pred.sum()), "caught": int((pred & y_te).sum()), "failures": int(y_te.sum())}
     for label, mask in [("seen", test["seen_site"].to_numpy()), ("new", ~test["seen_site"].to_numpy())]:
-        if y_te[mask].min() != y_te[mask].max():
+        if mask.any() and y_te[mask].min() != y_te[mask].max():
             row[f"PR_AUC_{label}_sites"] = average_precision_score(y_te[mask], s_te[mask])
     return row, boots
 
@@ -212,7 +215,7 @@ def record(name, oof, s_te, feats):
 
 
 timing = {}
-bar = tqdm(total=7, desc="Models", unit="model")
+bar = tqdm(total=8, desc="Models", unit="model")
 # 1. Site failure rate only
 record("site_rate", site_rate_oof(), test["site_rate"].to_numpy(), SITE)
 bar.update(1)
@@ -226,7 +229,8 @@ models = {"logreg_rain": (logreg, RAIN + SEASON),
           "logreg_all": (logreg, ALL),
           "forest_all": (forest, ALL),
           "gboost_all": (gboost, ALL),
-          "logreg_weather": (logreg, ALL + EXTRA)}
+          "logreg_weather": (logreg, ALL + EXTRA),
+          "logreg_history": (logreg, ALL + HISTORY)}
 fitted, calib, probs = {}, [], {}
 for name, (make, feats) in models.items():
     bar.set_postfix_str(name)
@@ -266,10 +270,13 @@ for name in [r["model"] for r in rows if r["model"] != "rain_rule"]:
 pd.DataFrame(diffs).to_csv(RESULTS / "model_vs_rain_rule.csv", index=False)
 
 # Do the extra features help? Same model, with vs without them.
-d = boots["logreg_weather"] - boots["logreg_all"]
-lo, hi = np.percentile(d, [2.5, 97.5])
-print(f"\nAdding low flow + temperature + sunlight to the full logistic regression: "
-      f"{d.mean():+.3f} PR-AUC ({lo:+.3f} to {hi:+.3f}); better in {(d > 0).mean():.0%} of resamples")
+print()
+for name, what in [("logreg_weather", "low flow + temperature + sunlight"),
+                   ("logreg_history", "previous result + 14-day rain")]:
+    d = boots[name] - boots["logreg_all"]
+    lo, hi = np.percentile(d, [2.5, 97.5])
+    print(f"Adding {what} to the full logistic regression: "
+          f"{d.mean():+.3f} PR-AUC ({lo:+.3f} to {hi:+.3f}); better in {(d > 0).mean():.0%} of resamples")
 rule_mm = res.loc[res["model"] == "rain_rule", "threshold"].iloc[0]
 print(f"\nRain rule chosen on training data: fail if more than {rule_mm:.1f} mm fell in the 48 h before sampling")
 
@@ -288,7 +295,8 @@ for i in order:
     print(f"  {feats[i]:16s} {imp.importances_mean[i]:+.3f} ± {imp.importances_std[i]:.3f}")
 
 res.to_csv(RESULTS / "model_results.csv", index=False)
-keep = ["id", "site", "sample_time_utc", "fail", "ecoli", "ie", "seen_site", "rain_48h", "flow_rel", "site_rate"]
+keep = ["id", "site", "sample_time_utc", "fail", "ecoli", "ie", "seen_site", "rain_48h", "flow_rel", "site_rate",
+        "prev_exceed"]
 out = test[keep].copy()
 for name, s_te in scores.items():
     out[f"score_{name}"] = s_te

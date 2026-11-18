@@ -5,7 +5,7 @@ Run from the project root (after scripts 04-07):
 
 Features (all windows END at the sample time t, minus one 15-minute reading
 interval, so no reading that might cover time after t is used):
-  rain_6h, rain_24h, rain_48h, rain_72h, rain_7d
+  rain_6h, rain_24h, rain_48h, rain_72h, rain_7d, rain_14d
         mm, averaged over the site's rain gauges; a gauge counts only if at
         least 80% of its readings in the window are present
   flow, flow_rel, flow_change_24h
@@ -21,6 +21,10 @@ interval, so no reading that might cover time after t is used):
   sun_hours_24h          hours of bright sunshine over the last 24 h
         (weather from 05b_weather.py: UV in sunlight kills bacteria, and
         temperature affects how long they survive)
+  prev_exceed, days_since_prev
+        the site's last result that would already be known (taken at least
+        2 days earlier, the lab turnaround, in the same season): log10 of how
+        far over the limit it was (> 0 = it failed), and how long ago
   month, day_of_year
   Thames sites only (spill history exists only for Thames Water):
   spill_h_{24,48,72}h_{10,25,50}km
@@ -50,13 +54,13 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from funcs import (HOUR, as_known_at, build_series, flow_at, hourly_window, rain_total,
-                   truncate)
+from funcs import (HOUR, RESULT_LAG_DAYS, as_known_at, build_series, flow_at, hourly_window,
+                   previous_result, rain_total, truncate)
 
 INTERIM, OUT = Path("data/interim"), Path("data/processed")
 OUT.mkdir(parents=True, exist_ok=True)
 TEST_YEAR = 2026
-RAIN_WINDOWS = {"6h": 6, "24h": 24, "48h": 48, "72h": 72, "7d": 168}
+RAIN_WINDOWS = {"6h": 6, "24h": 24, "48h": 48, "72h": 72, "7d": 168, "14d": 336}
 SPILL_WINDOWS, BANDS = (24, 48, 72), (10, 25, 50)
 SINCE_CAP_H = 30 * 24
 DECAY_KM = 10
@@ -184,6 +188,8 @@ feats = pd.DataFrame(rows, index=samples.index)
 local = pd.to_datetime(samples["sample_time_utc"], utc=True, format="ISO8601").dt.tz_convert("Europe/London")
 out = pd.concat([samples[["id", "site", "sample_time_utc", "year", "ecoli", "ie", "fail",
                           "fail_ecoli", "fail_ie", "discountable", "extra_sample"]], feats], axis=1)
+prev = previous_result(samples)
+out = pd.concat([out, prev], axis=1)
 out["month"], out["day_of_year"] = local.dt.month, local.dt.day_of_year
 out["thames"] = out["id"].isin(thames_ids)
 out["spill_data_ok"] = out["thames"] & (local.dt.year >= 2023)
@@ -211,9 +217,15 @@ for i in tqdm(test_idx, desc="Leakage test", unit="sample"):
 print(f"Leakage test: {len(test_idx) - bad}/{len(test_idx)} samples identical with all later data removed")
 if bad:
     raise SystemExit("Leakage detected - fix before modelling.")
+# The previous-result feature uses other samples' labels, so check it separately:
+# every result it uses must have been taken at least RESULT_LAG_DAYS earlier.
+too_new = (out["days_since_prev"] < RESULT_LAG_DAYS).sum()
+print(f"Previous-result check: {too_new} samples use a result less than {RESULT_LAG_DAYS} days old")
+if too_new:
+    raise SystemExit("Previous-result feature uses results that wouldn't be known yet.")
 
 # ----------------------------------------------------------------- report
-fcols = [c for c in feats.columns]
+fcols = list(feats.columns) + list(prev.columns)
 print("\nMissing values per feature (% of rows where it applies):")
 for c in fcols:
     base = out[out["thames"]] if c.startswith(("spill", "spilling", "hours_since", "offline")) else out
@@ -224,6 +236,14 @@ print(out.groupby(q, observed=True)["fail"].agg(["size", "mean"]).round(3).to_st
 print("\nFailure rate by sunlight in the last 24 h (expect lower risk on sunnier days, all else equal):")
 q = pd.qcut(out["sun_24h"], 4, duplicates="drop")
 print(out.groupby(q, observed=True)["fail"].agg(["size", "mean"]).round(3).to_string())
+print("\nFailure rate by the site's previous known result (persistence):")
+grp = pd.cut(out["prev_exceed"], [-np.inf, np.log10(0.5), 0, np.inf],
+             labels=["under half the limit", "half to 1x limit", "failed"])
+print(out.groupby(grp.cat.add_categories("first of season").fillna("first of season"), observed=True)["fail"]
+      .agg(["size", "mean"]).round(3).to_string())
+dry = out["rain_48h"] <= 0.5
+print("  same, dry 48 h only:")
+print(out[dry].groupby(grp[dry], observed=True)["fail"].agg(["size", "mean"]).round(3).to_string())
 th = out[out["spill_data_ok"]]
 if len(th):
     print("\nThames samples (2023+), failure rate by whether any upstream spill within 25 km in the last 48 h:")

@@ -120,6 +120,12 @@ cd swim-safety
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
+./run_all.sh                           # run every step below in order
+```
+
+Or run steps one at a time (or `./run_all.sh 06` to start from step 06):
+
+```bash
 python scripts/04_samples.py           # clean samples and site table
 python scripts/05_hydrology.py         # rain gauges and flow stations
 python scripts/06_spills.py            # Thames spill history -> spill events

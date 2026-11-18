@@ -32,6 +32,7 @@ N_BINS = 5
 pred = pd.read_csv("results/test_predictions.csv")
 res = pd.read_csv("results/model_results.csv").set_index("model")
 feat = pd.read_csv("data/processed/features.csv")
+feat["split"] = np.where(feat["year"] >= 2026, "test", "train")
 extra = ["rain_6h", "rain_7d", "flow_change_24h", "month", "extra_sample", "discountable"]
 pred = pred.merge(feat[["id", "sample_time_utc"] + extra], on=["id", "sample_time_utc"], how="left")
 pred["fail"] = pred["fail"].astype(bool)
@@ -127,6 +128,18 @@ for m in ["logreg_all", "logreg_weather", "logreg_history"]:
 if "prev_exceed" in pred:
     after_fail = (dry_fails["prev_exceed"] > 0).sum()
     print(f"   {after_fail} of the {len(dry_fails)} dry-weather failures came straight after a known failure at the same site")
+
+# A two-part rule with nothing tuned beyond the rain rule's own threshold:
+# alert if it rained (the rain rule) OR the site's last known result failed.
+rule_mm = res.loc["rain_rule", "threshold"]
+print(f"\n   Two-part rule: rain > {rule_mm:.1f} mm in 48 h OR the last known result failed")
+for split, d in feat.groupby("split"):
+    rain_a = d["rain_48h"].fillna(0) >= rule_mm
+    both_a = rain_a | (d["prev_exceed"] > 0)
+    f, dryf = d["fail"].astype(bool), d["fail"].astype(bool) & (d["rain_48h"] <= 0.5)
+    for name, a_ in [("rain rule", rain_a), ("two-part", both_a)]:
+        print(f"   {split:5s} {name:9s} flags {int(a_.sum()):3d}, catches {int((a_ & f).sum()):3d} of {int(f.sum())} failures "
+              f"(precision {(a_ & f).sum() / max(a_.sum(), 1):.0%}); dry-weather failures caught {int((a_ & dryf).sum())} of {int(dryf.sum())}")
 
 # --------------------------------------------------------- 4. false alarms
 fa = pred[pred[f"alert_{BEST}"] & ~y]

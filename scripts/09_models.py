@@ -55,6 +55,7 @@ from sklearn.metrics import (average_precision_score, f1_score, precision_recall
                              precision_score, recall_score, roc_auc_score)
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import FunctionTransformer, StandardScaler
+from threadpoolctl import threadpool_limits
 from tqdm import tqdm
 
 SEED = 0
@@ -125,12 +126,25 @@ def forest(feats):
                                                 class_weight="balanced_subsample", random_state=SEED, n_jobs=-1))
 
 
+class SingleThread(HistGradientBoostingClassifier):
+    """Gradient boosting run on one CPU thread. On a dataset this small, sharing
+    the work across threads costs far more than it saves (very slow under WSL)."""
+
+    def fit(self, X, y, **kw):
+        with threadpool_limits(1):
+            return super().fit(X, y, **kw)
+
+    def predict_proba(self, X):
+        with threadpool_limits(1):
+            return super().predict_proba(X)
+
+
 def gboost(feats):
     # +1 = predicted risk may only rise as the feature rises (rain, site history)
     mono = [1 if f in RAIN + SITE else 0 for f in feats]
-    return HistGradientBoostingClassifier(max_iter=300, learning_rate=0.05, max_leaf_nodes=15,
-                                          min_samples_leaf=20, l2_regularization=1.0,
-                                          monotonic_cst=mono, class_weight="balanced", random_state=SEED)
+    return SingleThread(max_iter=300, learning_rate=0.05, max_leaf_nodes=15,
+                        min_samples_leaf=20, l2_regularization=1.0,
+                        monotonic_cst=mono, class_weight="balanced", random_state=SEED)
 
 
 def season_oof(make, feats):

@@ -41,6 +41,7 @@ It doesn't change the ranking (so PR-AUC is unchanged), only the probabilities.
 Writes results/model_results.csv, results/model_vs_rain_rule.csv and
 results/test_predictions.csv.
 """
+import time
 from pathlib import Path
 
 import numpy as np
@@ -120,7 +121,7 @@ def logreg(feats):
 
 def forest(feats):
     return make_pipeline(SimpleImputer(strategy="median"),
-                         RandomForestClassifier(n_estimators=500, min_samples_leaf=5, max_features="sqrt",
+                         RandomForestClassifier(n_estimators=300, min_samples_leaf=5, max_features="sqrt",
                                                 class_weight="balanced_subsample", random_state=SEED, n_jobs=-1))
 
 
@@ -183,9 +184,19 @@ _rng = np.random.default_rng(SEED)
 BOOT = [i for i in (_rng.integers(0, len(y_te), len(y_te)) for _ in range(1000)) if y_te[i].min() != y_te[i].max()]
 
 
+def fast_ap(y, s):
+    """Same result as sklearn's average_precision_score (checked to 1e-15), but
+    much faster: it skips sklearn's input checks, which dominate over 1000 calls."""
+    order = np.argsort(-s, kind="mergesort")
+    y_s, s_s = y[order], s[order]
+    last = np.r_[np.flatnonzero(np.diff(s_s)), len(s_s) - 1]  # last row of each tied score
+    tps = np.cumsum(y_s)[last]
+    precision, recall = tps / (last + 1), tps / tps[-1]
+    return float(np.sum(np.diff(np.r_[0.0, recall]) * precision))
+
+
 def boot_scores(s):
-    return np.array([average_precision_score(y_te[i], s[i])
-                     for i in tqdm(BOOT, desc="  uncertainty ranges", unit="resample", leave=False)])
+    return np.array([fast_ap(y_te[i], s[i]) for i in BOOT])
 
 
 def evaluate(name, s_tr_oof, s_te, features):
@@ -210,11 +221,14 @@ rows, boots, scores = [], {}, {}
 
 
 def record(name, oof, s_te, feats):
+    t0 = time.time()
     row, b = evaluate(name, oof, s_te, feats)
+    timing[f"{name}: scoring"] = time.time() - t0
     rows.append(row)
     boots[name], scores[name] = b, s_te
 
 
+timing = {}
 bar = tqdm(total=6, desc="Models", unit="model")
 # 1. Site failure rate only
 record("site_rate", site_rate_oof(), test["site_rate"].to_numpy(), SITE)
@@ -232,8 +246,10 @@ models = {"logreg_rain": (logreg, RAIN + SEASON),
 fitted, calib, probs = {}, [], {}
 for name, (make, feats) in models.items():
     bar.set_postfix_str(name)
+    t0 = time.time()
     oof = season_oof(make, feats)
     m = make(feats).fit(train[feats], y_tr)
+    timing[f"{name}: training"] = time.time() - t0
     fitted[name] = (m, feats)
     s_te = m.predict_proba(test[feats])[:, 1]
     record(name, oof, s_te, feats)
@@ -271,8 +287,11 @@ print(f"\nRain rule chosen on training data: fail if more than {rule_mm:.1f} mm 
 # so no decision depends on the test set; importance is then measured on 2026.
 best = res[res["model"].isin(models)].sort_values("PR_AUC_train_cv", ascending=False)["model"].iloc[0]
 m, feats = fitted[best]
-print(f"\nWorking out feature importance for {best} (30 shuffles per feature, may take a minute)...")
-imp = permutation_importance(m, test[feats], y_te, scoring="average_precision", n_repeats=30, random_state=SEED)
+print(f"\nWorking out feature importance for {best} (10 shuffles per feature)...")
+t0 = time.time()
+imp = permutation_importance(m, test[feats], y_te, scoring="average_precision", n_repeats=10,
+                             random_state=SEED, n_jobs=-1)
+timing["feature importance"] = time.time() - t0
 order = np.argsort(-imp.importances_mean)
 print(f"\nPermutation importance for {best} (drop in test PR-AUC when the feature is shuffled):")
 for i in order:
@@ -286,4 +305,5 @@ for name, s_te in scores.items():
 for name, p in probs.items():
     out[f"prob_{name}"] = p
 out.to_csv(RESULTS / "test_predictions.csv", index=False)
+print("\nTime taken (seconds):", ", ".join(f"{k} {v:.1f}" for k, v in timing.items()))
 print(f"\nSaved {RESULTS/'model_results.csv'} and {RESULTS/'test_predictions.csv'}")

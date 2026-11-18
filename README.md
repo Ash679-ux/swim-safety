@@ -6,7 +6,7 @@ Predicting whether a sample at one of England's 20 river bathing sites will fail
 
 - **Rain is the main driver.** About 10% of samples fail after a dry 48 hours, and 74% after more than 10 mm.
 - **A one-line rule is as good as the models.** "Fail if more than 2.7 mm fell in the previous 48 h" scores PR-AUC 0.48 on the unseen 2026 season; logistic regression, random forests and gradient boosting can't be told apart from it.
-- **About a quarter of failures can't be predicted from rain:** 17 of 62 came after a dry 48 hours, and adding sunlight, temperature and low-flow features didn't catch any of them.
+- **About a quarter of failures come in dry weather**, and no weather model caught any of them. What works is checking the site's last result: alerting when it rained **or** the last known result failed catches 48 of 62 failures instead of 40, including 6 of the 17 dry-weather ones, for a small loss in precision (33% vs 37%).
 - **Sewage spills upstream hint at extra risk beyond rain** (odds ratio about 1.6, permutation p = 0.06), but with only 10 failures at the Thames sites this is a lead, not a finding.
 
 Skills shown: building a dataset from APIs, linking sources in space and time, leakage-safe features with a built-in test, time-based evaluation, calibration, error analysis and honest statistics on small data.
@@ -46,6 +46,8 @@ Trained on 2021–2025 (664 samples), tested on 2026 (398 samples, 62 failures).
 | Random forest, all features | 0.49 (0.37–0.61) | 0.76 | 34 of 62 | 102 | 33% |
 | Gradient boosting, all features (rain can only raise risk) | 0.43 (0.32–0.55) | 0.71 | 25 of 62 | 74 | 34% |
 | Logistic regression, all + low flow, temperature, sunlight | 0.53 (0.41–0.65) | 0.78 | 31 of 62 | 67 | 46% |
+| Logistic regression, all + previous result, 14-day rain | 0.47 (0.36–0.59) | 0.81 | 26 of 62 | 54 | 48% |
+| **Two-part rule: rain rule OR last known result failed** | | | **48 of 62** | 146 | 33% |
 
 Compared with the rain rule on the same 1,000 test resamples (paired bootstrap), every model's difference in PR-AUC has a 95% range that includes zero. The full logistic regression comes closest: +0.05 (−0.02 to +0.13), better in 90% of resamples.
 
@@ -63,11 +65,22 @@ The logistic regression's small edge comes from knowing each site's history: PR-
 - **Marginal failures are hardest:** 32% of failures at 1–2× the limit were caught, against 64% at more than 5×.
 - **False alarms are often near misses:** 35 of the model's 64 alerts didn't fail, but 54% of those were at least half the limit.
 
-### Do sunlight, temperature and low flow help?
+### Chasing the dry-weather failures
 
 Sunlight kills faecal bacteria (UV damages their DNA), warmth changes how long they survive, and at low flow steady sources such as treated effluent are less diluted. So I added hourly temperature and sunlight for each site (Open-Meteo) and a low-flow feature, aimed at the dry-weather failures.
 
 On their own they look promising: samples after the sunniest quarter of days fail 13% of the time against 35% after the dullest. But sunny days are mostly dry days, so most of that is rain again. Added to the full logistic regression they change PR-AUC by −0.007 (−0.05 to +0.04), better in only 37% of resamples, and still catch **0 of the 17 dry-weather failures**. The model does use them (shuffling low flow or the 7-day temperature lowers its score), but they replace information it already had from flow and rain rather than adding new information. The dry-weather failures probably need data these sources don't have, such as treated-effluent discharges, livestock or birds near the site, or the many unmonitored overflows outside Thames Water's area.
+
+**What did help: the site's last result.** Pollution at a site tends to last: on dry days, samples taken after a failed result failed 31% of the time, against 5% after a result under half the limit. Only results at least 2 days old are used, since that is how long the lab takes. Given to the logistic regression as a feature, this made the best training score (cross-validated PR-AUC 0.70) but a worse 2026 score (−0.06, better in 7% of resamples): a reminder that a better training score need not carry over to a new season. Used instead as a second trigger alongside the rain rule, with nothing new to tune, it works in both periods:
+
+| Rule | Period | Flagged | Failures caught | Precision | Dry-weather failures caught |
+| --- | --- | --- | --- | --- | --- |
+| Rain > 2.7 mm in 48 h | 2021–2025 | 215 | 106 of 177 | 49% | 0 of 37 |
+| Rain rule OR last result failed | 2021–2025 | 313 | 145 of 177 | 46% | 19 of 37 |
+| Rain > 2.7 mm in 48 h | 2026 | 107 | 40 of 62 | 37% | 0 of 17 |
+| Rain rule OR last result failed | 2026 | 146 | 48 of 62 | 33% | 6 of 17 |
+
+In 2026 the extra 39 alerts caught 8 more failures (21% of them failed, above the 16% base rate). For a swimmer that is the better trade: a missed failure is worse than an unnecessary warning. It is also how a live service could work, since both inputs are known on the morning of a swim.
 
 ### Spills experiment: 4 Thames sites, 2023–2026
 

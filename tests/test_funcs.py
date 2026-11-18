@@ -6,7 +6,7 @@ from sklearn.metrics import average_precision_score
 
 from common import text
 from funcs import (HOUR, NO_END, STEP, as_known_at, build_series, fails, fast_ap, flow_at,
-                   hourly_window, pair, rain_total, site_rate_by_other_seasons, truncate)
+                   hourly_window, pair, rain_total, site_rate_by_other_seasons, threshold_for_recall, truncate)
 
 T0 = pd.Timestamp("2024-06-01", tz="UTC").value  # an arbitrary start time, in ns
 
@@ -159,3 +159,27 @@ def test_previous_result_failed_sample_is_positive_and_seasons_dont_mix():
     prev = previous_result(s)
     assert np.isnan(prev.loc[1, "prev_exceed"])              # last season's result isn't carried over
     assert prev.loc[2, "prev_exceed"] == pytest.approx(np.log10(3.0))   # 3x the E. coli limit
+
+
+# ------------------------------------------------------- recall threshold
+def test_threshold_for_recall_picks_quietest_rule():
+    y = np.array([1, 0, 1, 0, 1])
+    s = np.array([0.9, 0.8, 0.7, 0.6, 0.1])
+    assert threshold_for_recall(y, s, 2 / 3) == 0.7   # 2 of 3 caught, 3 alerts
+    assert threshold_for_recall(y, s, 0.8) == 0.1     # needs every sample flagged
+    assert threshold_for_recall(y, s, 0.3) == 0.9
+
+
+def test_threshold_for_recall_flags_ties_together():
+    y, s = np.array([1, 0, 1, 1]), np.array([0.5, 0.5, 0.5, 0.2])
+    assert threshold_for_recall(y, s, 0.5) == 0.5     # can't split a tie: recall jumps to 2/3
+
+
+@pytest.mark.parametrize("seed", [0, 1, 2])
+def test_threshold_for_recall_matches_brute_force(seed):
+    rng = np.random.default_rng(seed)
+    y = rng.random(200) < 0.2
+    s = np.round(rng.random(200), 2)                    # rounding makes ties
+    for target in (0.5, 0.8, 0.9):
+        ok = [t for t in np.unique(s) if y[s >= t].sum() >= target * y.sum()]
+        assert threshold_for_recall(y, s, target) == max(ok)

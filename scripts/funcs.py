@@ -126,6 +126,19 @@ def fast_ap(y, s):
     return float(np.sum(np.diff(np.r_[0.0, recall]) * precision))
 
 
+def threshold_for_recall(y, score, target):
+    """The highest threshold (alert when score >= threshold) that still catches
+    at least `target` of the failures in y. A higher threshold means fewer
+    alerts, so this is the quietest rule that reaches the target recall.
+    Tied scores are flagged together, so recall can overshoot the target."""
+    y, score = np.asarray(y).astype(int), np.asarray(score, float)
+    order = np.argsort(-score, kind="mergesort")
+    y_s, s_s = y[order], score[order]
+    last = np.r_[np.flatnonzero(np.diff(s_s)), len(s_s) - 1]  # last row of each tied score
+    recall = np.cumsum(y_s)[last] / y.sum()
+    return float(s_s[last[np.argmax(recall >= target - 1e-12)]])
+
+
 RESULT_LAG_DAYS = 2  # lab results (bacteria cultures) are back about 2 days after sampling
 
 

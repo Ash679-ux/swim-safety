@@ -22,7 +22,12 @@ Failures are the minority (about 1 in 5), so models are judged on:
              test failure rate, printed with the results)
   ROC-AUC    0.5 = guessing at random
   precision / recall / F1 for failures, at a threshold chosen on the TRAINING
-  data, never tuned on the test set.
+  data, never tuned on the test set. Two operating points:
+    balanced     the threshold with the best F1 (precision and recall weighted equally)
+    high-recall  the highest threshold that catches at least 80% of training
+                 failures. A missed failure means people swim in polluted water;
+                 a false alarm means a "check before you swim" warning on a day
+                 that turned out fine, so missing a failure is the worse error.
 Thresholds use leave-one-season-out predictions on the training years (each
 season predicted by a model that never saw it), matching the test design.
 
@@ -59,9 +64,10 @@ from sklearn.preprocessing import FunctionTransformer, StandardScaler
 from threadpoolctl import threadpool_limits
 from tqdm import tqdm
 
-from funcs import fast_ap, site_rate_by_other_seasons, site_rate_map
+from funcs import fast_ap, site_rate_by_other_seasons, site_rate_map, threshold_for_recall
 
 SEED = 0
+RECALL_TARGET = 0.8  # high-recall operating point: catch at least 4 in 5 training failures
 RESULTS = Path("results")
 RESULTS.mkdir(exist_ok=True)
 
@@ -197,6 +203,13 @@ def evaluate(name, s_tr_oof, s_te, features):
            "precision": precision_score(y_te, pred, zero_division=0),
            "recall": recall_score(y_te, pred), "F1": f1_score(y_te, pred),
            "flagged": int(pred.sum()), "caught": int((pred & y_te).sum()), "failures": int(y_te.sum())}
+    # High-recall operating point, also set on the training predictions only
+    thr_hr = threshold_for_recall(y_tr, s_tr_oof, RECALL_TARGET)
+    pred_hr = (s_te >= thr_hr).astype(int)
+    row.update({"threshold_hr": thr_hr, "recall_train_hr": recall_score(y_tr, (s_tr_oof >= thr_hr).astype(int)),
+                "precision_hr": precision_score(y_te, pred_hr, zero_division=0),
+                "recall_hr": recall_score(y_te, pred_hr), "flagged_hr": int(pred_hr.sum()),
+                "caught_hr": int((pred_hr & y_te).sum())})
     for label, mask in [("seen", test["seen_site"].to_numpy()), ("new", ~test["seen_site"].to_numpy())]:
         if mask.any() and y_te[mask].min() != y_te[mask].max():
             row[f"PR_AUC_{label}_sites"] = average_precision_score(y_te[mask], s_te[mask])
@@ -255,6 +268,10 @@ print(f"\nTest season 2026: {int(y_te.sum())} failures in {len(y_te)} samples "
 show = res[["model", "PR_AUC_train_cv", "PR_AUC", "PR_AUC_lo", "PR_AUC_hi", "ROC_AUC", "precision", "recall", "F1",
             "flagged", "caught", "PR_AUC_seen_sites", "PR_AUC_new_sites"]]
 print(show.to_string(index=False, float_format=lambda x: f"{x:.2f}"))
+print(f"\nHigh-recall operating point (threshold set on training data to catch >= {RECALL_TARGET:.0%} of training failures):")
+hr = res[["model", "threshold_hr", "recall_train_hr", "recall_hr", "precision_hr", "flagged_hr", "caught_hr"]]
+print(hr.to_string(index=False, float_format=lambda x: f"{x:.2f}",
+                   header=["model", "threshold", "recall_train", "recall_2026", "precision_2026", "flagged", "caught"]))
 print("\nCalibration on 2026 (mean predicted probability vs actual failure rate; Brier: lower is better):")
 print(pd.DataFrame(calib).to_string(index=False, float_format=lambda x: f"{x:.3f}"))
 print("  Recalibration is fitted on the training years, so it can't correct for 2026 being a cleaner year.")
@@ -278,7 +295,9 @@ for name, what in [("logreg_weather", "low flow + temperature + sunlight"),
     print(f"Adding {what} to the full logistic regression: "
           f"{d.mean():+.3f} PR-AUC ({lo:+.3f} to {hi:+.3f}); better in {(d > 0).mean():.0%} of resamples")
 rule_mm = res.loc[res["model"] == "rain_rule", "threshold"].iloc[0]
-print(f"\nRain rule chosen on training data: fail if more than {rule_mm:.1f} mm fell in the 48 h before sampling")
+rule_hr = res.loc[res["model"] == "rain_rule", "threshold_hr"].iloc[0]
+print(f"\nRain rule chosen on training data: fail if more than {rule_mm:.1f} mm fell in the 48 h before sampling "
+      f"(high-recall version: {rule_hr:.1f} mm)")
 
 # What drives the best learned model? Chosen by cross-validated TRAINING PR-AUC,
 # so no decision depends on the test set; importance is then measured on 2026.

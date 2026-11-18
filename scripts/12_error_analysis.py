@@ -131,15 +131,20 @@ if "prev_exceed" in pred:
 
 # A two-part rule with nothing tuned beyond the rain rule's own threshold:
 # alert if it rained (the rain rule) OR the site's last known result failed.
-rule_mm = res.loc["rain_rule", "threshold"]
-print(f"\n   Two-part rule: rain > {rule_mm:.1f} mm in 48 h OR the last known result failed")
-for split, d in feat.groupby("split"):
-    rain_a = d["rain_48h"].fillna(0) >= rule_mm
-    both_a = rain_a | (d["prev_exceed"] > 0)
-    f, dryf = d["fail"].astype(bool), d["fail"].astype(bool) & (d["rain_48h"] <= 0.5)
-    for name, a_ in [("rain rule", rain_a), ("two-part", both_a)]:
-        print(f"   {split:5s} {name:9s} flags {int(a_.sum()):3d}, catches {int((a_ & f).sum()):3d} of {int(f.sum())} failures "
-              f"(precision {(a_ & f).sum() / max(a_.sum(), 1):.0%}); dry-weather failures caught {int((a_ & dryf).sum())} of {int(dryf.sum())}")
+# Shown at both operating points: the balanced (best-F1) rain threshold and the
+# high-recall one (both set on training data in 09_models.py).
+for point, col in [("balanced", "threshold"), ("high-recall", "threshold_hr")]:
+    if col not in res:
+        continue
+    rule_mm = res.loc["rain_rule", col]
+    print(f"\n   Two-part rule ({point}): rain > {rule_mm:.1f} mm in 48 h OR the last known result failed")
+    for split, d in feat.groupby("split"):
+        rain_a = d["rain_48h"].fillna(0) >= rule_mm
+        both_a = rain_a | (d["prev_exceed"] > 0)
+        f, dryf = d["fail"].astype(bool), d["fail"].astype(bool) & (d["rain_48h"] <= 0.5)
+        for name, a_ in [("rain rule", rain_a), ("two-part", both_a)]:
+            print(f"   {split:5s} {name:9s} flags {int(a_.sum()):3d}, catches {int((a_ & f).sum()):3d} of {int(f.sum())} failures "
+                  f"(precision {(a_ & f).sum() / max(a_.sum(), 1):.0%}); dry-weather failures caught {int((a_ & dryf).sum())} of {int(dryf.sum())}")
 
 # --------------------------------------------------------- 4. false alarms
 fa = pred[pred[f"alert_{BEST}"] & ~y]

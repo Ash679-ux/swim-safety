@@ -182,7 +182,7 @@ df["out_of_season"] = (md < 501) | (md > 930)
 df["days_since_prev"] = df.groupby("id")["sample_time_utc"].diff().dt.total_seconds() / 86400
 same_season = df.groupby("id")["year"].diff() == 0
 df["extra_sample"] = same_season & (df["days_since_prev"] < SHORT_GAP_DAYS)
-df["censored"] = (df["ecoli_qual"] != "=") | (df["ie_qual"] != "=")
+df["censored"] = df["ecoli_qual"].isin(["<", ">"]) | df["ie_qual"].isin(["<", ">"])
 odd_low = ((df["ecoli_qual"] == "<") & (df["ecoli"] > ECOLI_LIMIT)) | ((df["ie_qual"] == "<") & (df["ie"] > IE_LIMIT))
 
 # --------------------------------------------------------------- 6. report

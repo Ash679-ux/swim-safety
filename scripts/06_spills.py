@@ -22,6 +22,7 @@ import json
 import time
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import requests
 from tqdm import tqdm
@@ -81,7 +82,11 @@ print("Alert types:", df["alertType"].value_counts().to_dict())
 
 # Times -> UTC, drop exact repeats (pages can overlap if new alerts arrived mid-download)
 t = pd.to_datetime(df["datetime"], errors="coerce")
-df["time_utc"] = t.dt.tz_localize(LOCAL_TZ, ambiguous="NaT", nonexistent="shift_forward").dt.tz_convert("UTC")
+# In the repeated 1-2 am hour when clocks go back, a time is ambiguous. Treat it
+# as summer time rather than dropping it: dropping a Start or Stop would lose a
+# spill or merge two spills. At worst this places an alert 1 h early.
+ambiguous = np.ones(len(t), dtype=bool)
+df["time_utc"] = t.dt.tz_localize(LOCAL_TZ, ambiguous=ambiguous, nonexistent="shift_forward").dt.tz_convert("UTC")
 before = len(df)
 df = df.dropna(subset=["time_utc"]).drop_duplicates(["permitNumber", "locationName", "time_utc", "alertType"])
 print(f"Removed {before - len(df):,} repeated or undatable alerts")

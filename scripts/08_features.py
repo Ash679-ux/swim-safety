@@ -26,7 +26,12 @@ interval, so no reading that might cover time after t is used):
   spill_data_ok        False before 2023 (most monitors weren't connected yet)
 
 A leakage test at the end deletes every reading after t for a random set of
-samples, recomputes their features and checks they are identical.
+samples, recomputes their features and checks they are identical. It checks
+the feature calculations themselves. It does not cover the one quantity worked
+out in advance: each flow station's median flow, which uses all training
+seasons (so a 2021 sample is scaled partly with 2025 flow). That uses no
+labels and no test-season data, so it can't leak the answer, but it is
+noted in the README.
 
 Writes data/processed/features.csv.
 """

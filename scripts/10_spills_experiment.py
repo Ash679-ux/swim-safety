@@ -11,7 +11,9 @@ asked as a statistical question rather than by comparing prediction scores.
    spill, inside dry / light / wet rain groups.
 2. Likelihood-ratio test: does adding spills improve a logistic regression that
    already knows rain? Reported with the spill odds ratio and its 95% CI.
-   Repeated with flow added, as a check.
+   Repeated with flow added, as a check. It does not adjust for site (sites
+   with 0 failures make a site-adjusted model unstable), so step 3 is the
+   headline test.
 3. Permutation test: the LR statistic again, with spill values shuffled only
    among samples at the same site and in the same rain group. This keeps the
    link between rain and spills, so it asks "do spills add anything beyond
@@ -130,6 +132,8 @@ if obs is not None:
     rows.append({"analysis": "permutation", "base": "rain", "spill_feature": MAIN,
                  "n": obs["n"], "failures": obs["failures"], "LR": obs["LR"], "p_perm": p_perm})
     print(f"   observed LR = {obs['LR']:.2f}; permutation p = {p_perm:.3f} ({len(null)} valid shuffles)")
+    print("   This is the headline p-value: the likelihood-ratio test above adjusts for rain but not")
+    print("   for site, while this test shuffles spills only within the same site and rain group.")
 
 # --------------------------------------------- 4. distance bands / windows
 print("\n4. Which spill feature carries the signal? (exploratory, base = rain)")

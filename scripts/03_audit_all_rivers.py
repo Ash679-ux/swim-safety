@@ -14,14 +14,12 @@ Run from the project root (after 01_audit_bathing_samples.py):
 """
 import json
 import re
-from pathlib import Path
 
 import pandas as pd
-import requests
 from tqdm import tqdm
 
-BASE = "https://environment.data.gov.uk"
-RAW = Path("data/raw/bwq")
+from common import BASE, RAW, all_text, get_all, text
+
 RAW.mkdir(parents=True, exist_ok=True)
 ECOLI_LIMIT, IE_LIMIT = 1000, 400
 SINCE = 2020  # spill (EDM) monitoring is patchy before about 2020
@@ -32,27 +30,6 @@ SINCE = 2020  # spill (EDM) monitoring is patchy before about 2020
 INCLUDE_TYPES = ["RiverBathingWater"]
 
 
-def get_all(url, params):
-    items, page = [], 0
-    while True:
-        r = requests.get(url, params={**params, "_pageSize": 500, "_page": page}, timeout=60)
-        if not r.ok:
-            raise SystemExit(f"HTTP {r.status_code} for {r.url}\n{r.text[:800]}")
-        batch = r.json()["result"]["items"]
-        items.extend(batch)
-        if len(batch) < 500:
-            return items
-        page += 1
-
-
-def text(v):
-    if isinstance(v, dict):
-        return text(v.get("_value", v.get("inXSDDateTime", v.get("name", v.get("label", "")))))
-    if isinstance(v, list):
-        return text(v[0]) if v else ""
-    return "" if v is None else str(v)
-
-
 # 1. Register (reuse the copy saved by script 01 if it exists)
 reg_file = RAW / "bathing_waters.json"
 if reg_file.exists():
@@ -60,10 +37,6 @@ if reg_file.exists():
 else:
     sites = get_all(f"{BASE}/doc/bathing-water.json", {})
     reg_file.write_text(json.dumps(sites))
-
-def all_text(v):
-    """Join every value of a possibly-list field (e.g. several types)."""
-    return " | ".join(sorted(text(x) for x in v)) if isinstance(v, list) else text(v)
 
 
 # What does the register's "type" field contain? Print it so we can see.

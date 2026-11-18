@@ -1,5 +1,6 @@
 """Shared helpers for the Environment Agency bathing-water scripts."""
 import json
+import time
 from pathlib import Path
 
 import requests
@@ -9,14 +10,32 @@ RAW = Path("data/raw/bwq")
 RIVER_TYPE = "RiverBathingWater"
 
 
+def get_json(url, params=None, tries=5):
+    """GET a JSON page, retrying with back-off on dropped connections and
+    temporary server errors (429 / 5xx). Other HTTP errors stop the run."""
+    for attempt in range(tries):
+        try:
+            r = requests.get(url, params=params, timeout=(10, 60))
+        except requests.RequestException as e:
+            err = str(e)
+        else:
+            if r.ok:
+                return r.json()
+            if r.status_code != 429 and r.status_code < 500:
+                raise SystemExit(f"HTTP {r.status_code} for {r.url}\n{r.text[:800]}")
+            err = f"HTTP {r.status_code}"
+        if attempt < tries - 1:
+            wait = 5 * 2 ** attempt
+            print(f"  {err}; retrying in {wait}s")
+            time.sleep(wait)
+    raise SystemExit(f"Gave up after {tries} tries: {url} ({err})")
+
+
 def get_all(url, params=None):
     """Page through an EA linked-data API endpoint and return all items."""
     items, page = [], 0
     while True:
-        r = requests.get(url, params={**(params or {}), "_pageSize": 500, "_page": page}, timeout=60)
-        if not r.ok:
-            raise SystemExit(f"HTTP {r.status_code} for {r.url}\n{r.text[:800]}")
-        batch = r.json()["result"]["items"]
+        batch = get_json(url, {**(params or {}), "_pageSize": 500, "_page": page})["result"]["items"]
         items.extend(batch)
         if len(batch) < 500:
             return items

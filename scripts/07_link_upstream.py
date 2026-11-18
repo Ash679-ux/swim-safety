@@ -14,7 +14,12 @@ Method (the "upstream rule" for the README's Data decisions section):
   * Overflows downstream of a site never pass it, so they are excluded
     automatically. The feature step chooses how far upstream to count.
 
-Writes data/interim/upstream_links.csv: one row per (site, upstream overflow).
+Writes data/interim/upstream_links.csv: one row per (site, upstream overflow),
+and results/figures/5_upstream_links_check.png: a map per site of every traced
+path within 50 km, to check by eye that each linked overflow really drains to
+the site. Known risk: a path running alongside the river within SNAP_M of the
+site, but joining it further downstream, would be linked wrongly. The map is
+the check for that.
 """
 import hashlib
 from pathlib import Path
@@ -112,7 +117,7 @@ monitors = pd.read_csv(OUT / "monitors.csv").dropna(subset=["x", "y"])
 inside = monitors["x"].between(x0, x0 + ncols * sx) & monitors["y"].between(y0 - nrows * sy, y0)
 print(f"{inside.sum()} of {len(monitors)} monitors lie inside the grid")
 
-links = []
+links, paths = [], {}
 for m in tqdm(monitors[inside].itertuples(), total=int(inside.sum()), desc="Tracing overflows", unit="monitor"):
     px, py, pd_ = trace(m.x, m.y)
     if len(px) == 0:
@@ -121,6 +126,7 @@ for m in tqdm(monitors[inside].itertuples(), total=int(inside.sum()), desc="Trac
         gap = np.hypot(px - s.easting, py - s.northing)
         i = int(gap.argmin())
         if gap[i] <= SNAP_M:
+            paths.setdefault(s.id, []).append((px[:i + 1], py[:i + 1], pd_[i] / 1000))
             links.append({"id": s.id, "site": s.site, "permitNumber": m.permitNumber,
                           "location": m.location, "watercourse": m.watercourse,
                           "river_km": round(pd_[i] / 1000, 2), "snap_m": round(float(gap[i]))})
@@ -140,4 +146,46 @@ missing = sites[~sites["id"].isin(links["id"])]
 if len(missing):
     print(f"\n  ! no upstream overflows found for {missing['site'].tolist()}: "
           f"the site may sit more than {SNAP_M} m from the grid's river line; try a larger SNAP_M")
-print(f"\nSaved {OUT/'upstream_links.csv'}")
+
+# Map check: every traced path within 50 km should run into the site.
+from plotstyle import FIG, INK, INK2, MUTED, SERIES, SURFACE
+import matplotlib.pyplot as plt
+
+BANDS = [(10, SERIES[0], "within 10 km"), (25, SERIES[1], "10-25 km"), (50, SERIES[2], "25-50 km")]
+fig, axes = plt.subplots(2, 2, figsize=(11, 10))
+for ax, s in zip(axes.flat, sites.itertuples()):
+    near = [p for p in paths.get(s.id, []) if p[2] <= 50]
+    for px, py, km in near:
+        ax.plot(px / 1000, py / 1000, color=MUTED, linewidth=0.8, zorder=1)
+    lower = 0
+    for lim, colour, label in BANDS:
+        pts = [(px[0], py[0]) for px, py, km in near if lower < km <= lim or (lower == 0 and km == 0)]
+        lower = lim
+        if pts:
+            xs, ys = zip(*pts)
+            ax.scatter(np.array(xs) / 1000, np.array(ys) / 1000, s=40, color=colour, edgecolor=SURFACE,
+                       linewidth=1.5, zorder=3, label=label)
+    ax.scatter([s.easting / 1000], [s.northing / 1000], marker="*", s=260, color=INK, edgecolor=SURFACE,
+               linewidth=1.5, zorder=4, label="bathing site")
+    ax.set_title(s.site, fontsize=11, pad=8)
+    ax.set_aspect("equal")
+    ax.grid(False)
+    ax.tick_params(labelsize=8)
+    ax.set_xlabel("Easting (km)", fontsize=9)
+    ax.set_ylabel("Northing (km)", fontsize=9)
+for ax in list(axes.flat)[len(sites):]:
+    ax.axis("off")
+legend = {}
+for ax in axes.flat:  # combine legend entries from all panels
+    for h, l in zip(*ax.get_legend_handles_labels()):
+        legend.setdefault(l, h)
+order = [l for _, _, l in BANDS if l in legend] + ["bathing site"]
+fig.legend([legend[l] for l in order], order, loc="lower center", ncol=4, fontsize=10, bbox_to_anchor=(0.5, 0.0))
+fig.suptitle("Upstream overflows within 50 km and their traced paths (grey)", x=0.06, ha="left",
+             fontsize=13, fontweight="bold", color=INK)
+fig.text(0.06, 0.935, "Check: every grey path should flow into the star. Dots: overflow locations, "
+         "coloured by distance along the river.", color=INK2, fontsize=10)
+fig.tight_layout(rect=(0, 0.04, 1, 0.93))
+fig.savefig(FIG / "5_upstream_links_check.png", dpi=170)
+plt.close(fig)
+print(f"\nSaved {OUT/'upstream_links.csv'} and {FIG/'5_upstream_links_check.png'}")

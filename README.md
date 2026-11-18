@@ -92,7 +92,9 @@ In plain terms: under the rain model, a sample taken after 6 hours of upstream s
 | Upstream rule | Follow the flow-direction grid downstream from each overflow; upstream if the path passes within 300 m of the site | Excludes downstream overflows automatically; distances run 5–10% long because the path zigzags across 50 m grid cells |
 | No leakage | Every feature uses only data from before the sample time, checked by a built-in test | The model may only see what was known when the sample was taken |
 | Split | Train 2021–2025, test 2026 | Tests on a season the model has never seen |
-| Thresholds | Chosen on training data only (out-of-fold) | Keeps test results honest |
+| Thresholds | Chosen on training data only, from leave-one-season-out predictions | Keeps test results honest and matches the test design |
+| Site history feature | Each training sample's site failure rate is learned from the other training seasons only, rebuilt inside every cross-validation fold | A leave-one-out rate leaks the label: failing samples always get a slightly lower rate than passing ones at the same site, which tree models learn as a fake pattern |
+| Model comparison | Paired bootstrap of the PR-AUC difference against the rain rule, on the same test resamples | Answers "is it really better?" directly, rather than comparing separate intervals |
 
 ## Limitations
 
@@ -101,6 +103,10 @@ In plain terms: under the rain model, a sample taken after 6 hours of upstream s
 - **Spill alerts indicate spills, they don't confirm them**, and monitors can be offline.
 - **2026 was cleaner than the training years** (15.6% failing vs 26.7%), so thresholds and probabilities learned from training data run high for 2026.
 - **About a quarter of failures follow dry weather**, which no feature here explains.
+- **Upstream links rely on a 50 m flow-direction grid.** A path running alongside the river within 300 m of a site but joining it further downstream would be linked wrongly. `results/figures/5_upstream_links_check.png` maps every link within 50 km so this can be checked by eye.
+- **The spills likelihood-ratio test adjusts for rain but not site** (sites with no failures make a site-adjusted model unstable). The permutation test shuffles spills within site and rain group, so its p-value is the headline.
+- **Relative flow is scaled by each station's median over all training seasons**, so early samples are scaled partly with later flow. This uses no labels or test data.
+- **Alerts in the repeated hour when clocks go back** are treated as summer time, so they may sit up to 1 hour early.
 - **Six sites appear only in the 2026 test set**, so results there reflect performance on new sites.
 - **Wolvercote's 2022 season** comes before most Thames monitors were connected, so it is excluded from the spills experiment.
 
@@ -117,7 +123,7 @@ pip install -r requirements.txt
 python scripts/04_samples.py           # clean samples and site table
 python scripts/05_hydrology.py         # rain gauges and flow stations
 python scripts/06_spills.py            # Thames spill history -> spill events
-python scripts/07_link_upstream.py     # which overflows are upstream of each site
+python scripts/07_link_upstream.py     # which overflows are upstream of each site (+ map check)
 python scripts/08_features.py          # features, with a leakage test
 python scripts/09_models.py            # main model
 python scripts/10_spills_experiment.py # spills experiment

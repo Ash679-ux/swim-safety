@@ -5,7 +5,7 @@ Predicting whether a river bathing-water sample in England will fail its bacteri
 **Main findings**
 
 - **Rain is the main driver.** About 10% of samples fail after a dry 48 hours, 27% after 4–10 mm of rain, and 74% after more than 10 mm.
-- **A one-line rain rule does most of the work.** "Fail if more than 2.7 mm fell in the previous 48 h" scores PR-AUC 0.48 on the unseen 2026 season. A logistic regression with rain, flow, season and site history scores 0.55, but the uncertainty ranges overlap.
+- **A one-line rain rule does most of the work.** "Fail if more than 2.7 mm fell in the previous 48 h" scores PR-AUC 0.48 on the unseen 2026 season. A logistic regression with rain, flow, season and site history scores 0.54, but a paired comparison can't tell the two apart; random forests and gradient boosting did no better.
 - **About a quarter of failures can't be predicted from rain.** 17 of the 62 failures in 2026 came after a dry 48 hours, and no weather model caught any of them.
 - **Upstream sewage spills hint at extra risk beyond rain, but the data can't confirm it.** At Thames Water sites, spills 25–50 km upstream over the previous 2–3 days are linked to higher odds of failure (odds ratio about 1.6, permutation p = 0.06). With only 10 failures, this is a lead for more data rather than a firm result.
 
@@ -38,26 +38,28 @@ Trained on 2021–2025 (664 samples), tested on 2026 (398 samples, 62 failures).
 | Model | PR-AUC (95% range) | ROC-AUC | Failures caught | Samples flagged | Precision |
 | --- | --- | --- | --- | --- | --- |
 | Random guessing | 0.16 | 0.50 | | | |
-| Site failure rate only | 0.28 (0.20–0.37) | 0.70 | 53 of 62 | 239 | 22% |
+| Site failure rate only | 0.28 (0.20–0.37) | 0.70 | 60 of 62 | 338 | 18% |
 | Rain rule (> 2.7 mm in 48 h) | 0.48 (0.36–0.61) | 0.75 | 40 of 62 | 107 | 37% |
-| Logistic regression, rain + season | 0.51 (0.39–0.63) | 0.76 | 34 of 62 | 79 | 43% |
-| Logistic regression, all features | 0.55 (0.42–0.67) | 0.83 | 31 of 62 | 62 | 50% |
-| Random forest, all features | 0.54 (0.42–0.67) | 0.83 | 25 of 62 | 46 | 54% |
-| Gradient boosting, all features (rain can only raise risk) | 0.46 (0.34–0.58) | 0.76 | 24 of 62 | 53 | 45% |
+| Logistic regression, rain + season | 0.51 (0.39–0.63) | 0.76 | 33 of 62 | 73 | 45% |
+| Logistic regression, all features | 0.54 (0.42–0.65) | 0.79 | 29 of 62 | 64 | 45% |
+| Random forest, all features | 0.49 (0.37–0.61) | 0.76 | 34 of 62 | 102 | 33% |
+| Gradient boosting, all features (rain can only raise risk) | 0.43 (0.32–0.55) | 0.71 | 25 of 62 | 74 | 34% |
+
+Compared with the rain rule on the same 1,000 test resamples (paired bootstrap), every model's difference in PR-AUC has a 95% range that includes zero. The full logistic regression comes closest: +0.05 (−0.02 to +0.13), better in 90% of resamples.
 
 ![Precision-recall curves on the 2026 test season](results/figures/2_precision_recall_2026.png)
 
-The models' small edge over the rain rule comes from knowing each site's history: PR-AUC 0.60 vs 0.50 on familiar sites, but about the same (0.46–0.49) on the 6 sites first sampled in 2026. Gradient boosting, the usual strongest method for tabular data, did worse than logistic regression: with about 180 training failures, a more flexible model has more room to fit noise.
+The logistic regression's small edge comes from knowing each site's history: PR-AUC 0.58 vs 0.50 for the rain rule on familiar sites, but the same (0.46) on the 6 sites first sampled in 2026. Random forests and gradient boosting, usually the strongest methods for tabular data, did worse than logistic regression: with about 180 training failures, more flexible models have more room to fit noise. The features that matter most are relative river flow, rain in the last 6 h and 48 h, time of year and site history.
 
 ### Calibration and error analysis
 
 ![Calibration of the logistic regression on 2026, before and after recalibration](results/figures/4_calibration_2026.png)
 
-- **Raw scores overstate risk about twice over.** The logistic regression predicted an average 32% chance of failing; 16% failed. Balanced class weights inflate the scores, and 2026 was a cleaner year than the training years. A logistic recalibration fitted on the training years brings the average to 19% and improves the Brier score from 0.134 to 0.099. The ranking, and so PR-AUC, is unchanged.
-- **About a quarter of failures follow dry weather.** 17 of 62 failures came after less than 0.5 mm of rain in 48 hours; no weather model caught any of them. Of the 21 failures missed by all four weather models, 81% followed a dry 48 hours and 6 were at the River Tone in Taunton. Several came after a wet week (12–21 mm over 7 days) or at very low flow (0.1–0.5× normal), which hints at slow catchment drainage or less dilution of steady sources such as treated effluent.
-- **On new sites, use the rain rule.** It caught 11 of 21 failures at the six sites first sampled in 2026; the full logistic regression caught 5, because it leans on site history that new sites don't have.
-- **Marginal failures are hardest:** 39% of failures at 1–2× the limit were caught, against 71% at more than 5×.
-- **False alarms are mostly near misses:** 31 of the model's 62 alerts didn't fail, but 68% of those were at least half the limit.
+- **Raw scores overstate risk about twice over.** The logistic regression predicted an average 33% chance of failing; 16% failed. Balanced class weights inflate the scores, and 2026 was a cleaner year than the training years. A logistic recalibration fitted on the training years brings the average to 18% and improves the Brier score from 0.143 to 0.103; in the riskiest fifth of samples it predicts 44% and 44% failed. The ranking, and so PR-AUC, is unchanged.
+- **About a quarter of failures follow dry weather.** 17 of 62 failures came after less than 0.5 mm of rain in 48 hours; no weather model caught any of them. Of the 19 failures missed by all four weather models, 84% followed a dry 48 hours and 6 were at the River Tone in Taunton. Several came after a wet week (12–21 mm over 7 days) or at very low flow (0.1–0.5× normal), which hints at slow catchment drainage or less dilution of steady sources such as treated effluent.
+- **On new sites, use the rain rule.** It caught 11 of 21 failures at the six sites first sampled in 2026; the full logistic regression caught 6, because it leans on site history that new sites don't have.
+- **Marginal failures are hardest:** 32% of failures at 1–2× the limit were caught, against 64% at more than 5×.
+- **False alarms are often near misses:** 35 of the model's 64 alerts didn't fail, but 54% of those were at least half the limit.
 
 ### Spills experiment: 4 Thames sites, 2023–2026
 

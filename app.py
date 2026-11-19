@@ -17,7 +17,7 @@ import requests
 import streamlit as st
 
 sys.path.insert(0, "scripts")
-from common import BASE, get_all, text  # noqa: E402
+from common import BASE, get_json, text  # noqa: E402
 from funcs import build_series, rain_total  # noqa: E402
 
 RAIN_MM = 2.7        # balanced rain-rule threshold, set on 2020-2025 data in 09_models.py
@@ -60,11 +60,11 @@ def rain_48h(lat, lon, now_ns):
 def last_result(sid):
     """Newest published sample: (time, failed). Pass/fail uses the same test as the
     model's previous-result feature: E. coli over 1000 or enterococci over 400."""
-    items = get_all(f"{BASE}/doc/bathing-water-quality/in-season/sample.json",
-                    {"bwq_bathingWater.eubwidNotation": sid})
+    items = get_json(f"{BASE}/doc/bathing-water-quality/in-season/sample.json",
+                     {"bwq_bathingWater.eubwidNotation": sid, "_sort": "-sampleDateTime", "_pageSize": 1})["result"]["items"]
     if not items:
         return pd.NaT, False
-    it = max(items, key=lambda i: text(i.get("sampleDateTime")))
+    it = items[0]
     when = pd.to_datetime(text(it.get("sampleDateTime")), utc=True)  # an hour out at most; fine for a 14-day cut-off
     ratio = max(float(it.get("escherichiaColiCount") or 0) / 1000,
                 float(it.get("intestinalEnterococciCount") or 0) / 400)

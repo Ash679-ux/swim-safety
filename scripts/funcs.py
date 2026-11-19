@@ -84,6 +84,11 @@ def hourly_window(s, t, hours, how):
     total = s["cum"][i1] - s["cum"][i0]
     return total / n if how == "mean" else total
 
+def spill_dilution(spill_hours, flow):
+    """Spill hours per m3/s of river flow: the same spill is more diluted in a
+    bigger or fuller river. NaN when flow is missing or not positive."""
+    return spill_hours / flow if flow > 0 else np.nan
+
 def as_known_at(events, t):
     """Events as they would have been known at time t: started by t, and any
     Stop that came after t not yet received (end unknown)."""

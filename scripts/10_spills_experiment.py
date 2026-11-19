@@ -21,6 +21,7 @@ asked as a statistical question rather than by comparing prediction scores.
    support.
 4. Which distance band and window carry the signal (exploratory: many variants
    on few failures, so read as a pattern, not a set of separate findings).
+   Also includes spill_dilution_48h_25km (spill hours / river flow).
 5. Prediction check: repeated cross-validation PR-AUC, rain-only vs rain + spills.
 
 Writes results/spills_experiment.csv.
@@ -45,6 +46,7 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 SEED = 0
 N_PERM = 2000
 MAIN = "spill_h_48h_25km"  # the pre-chosen main spill feature
+DILUTION = "spill_dilution_48h_25km"  # MAIN divided by flow, tested the same way
 RAIN_BINS = [-np.inf, 0.5, 4, np.inf]
 RAIN_LABELS = ["dry (<= 0.5 mm)", "light (0.5-4 mm)", "wet (> 4 mm)"]
 RESULTS = Path("results")
@@ -56,7 +58,7 @@ d["y"] = d["fail"].astype(int)
 d["log_rain"] = np.log1p(d["rain_48h"].clip(lower=0))
 d["log_flow"] = np.log(d["flow_rel"].clip(lower=1e-3))
 d["rain_group"] = pd.cut(d["rain_48h"], RAIN_BINS, labels=RAIN_LABELS)
-spill_cols = [c for c in d.columns if c.startswith("spill_h_")] + ["spill_weighted_72h"]
+spill_cols = [c for c in d.columns if c.startswith("spill_h_")] + ["spill_weighted_72h", DILUTION]
 for c in spill_cols:
     d[f"log_{c}"] = np.log1p(d[c])
 print(f"{len(d)} Thames samples (2023+) at {d['id'].nunique()} sites: "
@@ -112,28 +114,37 @@ for label, base in [("rain", ["log_rain"]), ("rain + flow", ["log_rain", "log_fl
           f"(95% CI {r['OR_lo']:.2f}-{r['OR_hi']:.2f}); AIC {r['AIC_base']:.1f} -> {r['AIC_with_spill']:.1f}")
 
 # ---------------------------------------------------- 3. permutation test
-print(f"\n3. Permutation test ({N_PERM} shuffles of spills within site x rain group):")
-sub = d.dropna(subset=["log_rain", f"log_{MAIN}"]).reset_index(drop=True)
-obs = lr_test(sub, ["log_rain"], f"log_{MAIN}")
-if obs is not None:
+def perm_test(feature):
+    """LR statistic for `feature` vs its null with values shuffled within site x rain group."""
+    sub = d.dropna(subset=["log_rain", f"log_{feature}"]).reset_index(drop=True)
+    obs = lr_test(sub, ["log_rain"], f"log_{feature}")
+    if obs is None:
+        print(f"   {feature}: model could not be fitted")
+        return sub
     rng = np.random.default_rng(SEED)
     strata = sub.groupby(["id", "rain_group"], observed=True).indices
-    null, x = [], sub[f"log_{MAIN}"].to_numpy()
+    null, x = [], sub[f"log_{feature}"].to_numpy()
     for _ in range(N_PERM):
         xp = x.copy()
         for idx in strata.values():
             xp[idx] = rng.permutation(x[idx])
-        perm = sub.assign(**{f"log_{MAIN}": xp})
-        r = lr_test(perm, ["log_rain"], f"log_{MAIN}")
+        r = lr_test(sub.assign(**{f"log_{feature}": xp}), ["log_rain"], f"log_{feature}")
         if r is not None:
             null.append(r["LR"])
     null = np.array(null)
     p_perm = (1 + (null >= obs["LR"]).sum()) / (1 + len(null))
-    rows.append({"analysis": "permutation", "base": "rain", "spill_feature": MAIN,
+    rows.append({"analysis": "permutation", "base": "rain", "spill_feature": feature,
                  "n": obs["n"], "failures": obs["failures"], "LR": obs["LR"], "p_perm": p_perm})
-    print(f"   observed LR = {obs['LR']:.2f}; permutation p = {p_perm:.3f} ({len(null)} valid shuffles)")
-    print("   This is the headline p-value: the likelihood-ratio test above adjusts for rain but not")
-    print("   for site, while this test shuffles spills only within the same site and rain group.")
+    print(f"   {feature}: n={obs['n']}, observed LR = {obs['LR']:.2f}; permutation p = {p_perm:.3f} "
+          f"({len(null)} valid shuffles)")
+    return sub
+
+
+print(f"\n3. Permutation test ({N_PERM} shuffles of spills within site x rain group):")
+sub = perm_test(MAIN)
+perm_test(DILUTION)
+print("   This is the headline p-value: the likelihood-ratio test above adjusts for rain but not")
+print("   for site, while this test shuffles spills only within the same site and rain group.")
 
 # --------------------------------------------- 4. distance bands / windows
 print("\n4. Which spill feature carries the signal? (exploratory, base = rain)")

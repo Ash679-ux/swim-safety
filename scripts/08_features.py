@@ -32,6 +32,8 @@ interval, so no reading that might cover time after t is used):
         along the river, overlapping the window before t
   spilling_now_{10,25,50}km    overflows spilling at time t
   hours_since_spill_{10,25,50}km   capped at 30 days
+  spill_dilution_48h_25km   spill_h_48h_25km divided by flow (hours per m3/s):
+                       the same spill should matter less in a bigger river
   spill_weighted_72h   spill hours in the last 72 h, each overflow weighted by
                        exp(-river_km / 10), so nearer spills count more
   offline_frac_72h_25km   share of upstream overflows within 25 km that were
@@ -55,7 +57,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from funcs import (HOUR, RESULT_LAG_DAYS, as_known_at, build_series, flow_at, hourly_window,
-                   previous_result, rain_total, truncate)
+                   previous_result, rain_total, spill_dilution, truncate)
 
 INTERIM, OUT = Path("data/interim"), Path("data/processed")
 OUT.mkdir(parents=True, exist_ok=True)
@@ -120,6 +122,7 @@ def site_features(t, gauges, rain, flow_st, flow, flow_median, spills, links_km,
                 f[f"hours_since_spill_{b}km"] = min(last, SINCE_CAP_H)
             else:
                 f[f"hours_since_spill_{b}km"] = SINCE_CAP_H
+        f["spill_dilution_48h_25km"] = spill_dilution(f["spill_h_48h_25km"], f["flow"])
         overlap72 = np.clip(end - np.maximum(start, t - 72 * HOUR), 0, None)
         f["spill_weighted_72h"] = float((overlap72 * np.exp(-km / DECAY_KM)).sum() / HOUR)
         near = links_km[links_km <= 25].index

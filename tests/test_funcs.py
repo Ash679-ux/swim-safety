@@ -6,7 +6,7 @@ from sklearn.metrics import average_precision_score
 
 from common import text
 from funcs import (HOUR, NO_END, STEP, as_known_at, build_series, fails, fast_ap, flow_at,
-                   hourly_window, pair, rain_total, site_rate_by_other_seasons, truncate)
+                   hourly_window, pair, rain_total, site_rate_by_other_seasons, spill_dilution, truncate)
 
 T0 = pd.Timestamp("2024-06-01", tz="UTC").value  # an arbitrary start time, in ns
 
@@ -159,3 +159,11 @@ def test_previous_result_failed_sample_is_positive_and_seasons_dont_mix():
     prev = previous_result(s)
     assert np.isnan(prev.loc[1, "prev_exceed"])              # last season's result isn't carried over
     assert prev.loc[2, "prev_exceed"] == pytest.approx(np.log10(3.0))   # 3x the E. coli limit
+
+
+def test_spill_dilution():
+    assert spill_dilution(6.0, 3.0) == 2.0
+    assert spill_dilution(0.0, 3.0) == 0.0
+    # no usable flow reading -> unknown, not infinite
+    assert np.isnan(spill_dilution(6.0, 0.0))
+    assert np.isnan(spill_dilution(6.0, np.nan))

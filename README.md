@@ -192,7 +192,7 @@ Scripts 01–03 are the initial data audit and are not needed to rebuild the res
 
 ## Today's risk page
 
-`app.py` is a one-page Streamlit app that applies the two-part rule to every site right now: it flags a site if more than 2.7 mm of rain fell in the last 48 hours at the nearest live rain gauges, or if the site's latest sample (within 14 days) failed. It needs `data/interim/sites.csv`, so run step 04 first, then:
+`app.py` is a one-page Streamlit app that applies the two-part rule to every site right now: it flags a site if more than 2.7 mm of rain fell in the last 48 hours at the nearest live rain gauges, or if the site's latest sample (within 14 days) failed. It reads `sites.csv` in the repo root (site names and coordinates, written by step 04 and committed so the page runs without the pipeline):
 
 ```bash
 streamlit run app.py
@@ -216,6 +216,7 @@ Code: MIT licence (see `LICENSE`). Data: EA bathing-water, hydrology and flood-m
 
 ```
 app.py          Streamlit page: each site's risk today (streamlit run app.py)
+sites.csv       site names and coordinates for app.py (written by step 04)
 run_all.sh      runs the pipeline in order (./run_all.sh, or ./run_all.sh 06 to start at step 06)
 scripts/        numbered pipeline steps (01-13) and shared code (common.py downloads,
                 funcs.py tested core logic, plotstyle.py figure style)

@@ -221,6 +221,8 @@ cols = ["id", "site", "sample_time_utc", "year", "ecoli", "ecoli_qual", "ie", "i
         "censored", "days_since_prev", "sample_time_raw", "record_date", "uri"]
 df[cols].to_csv(OUT / "samples.csv", index=False)
 sites.to_csv(OUT / "sites.csv", index=False)
+# Committed copy for the Streamlit page, which can't see the gitignored data/ folder when deployed
+sites.dropna(subset=["lat", "long"])[["id", "site", "lat", "long"]].to_csv("sites.csv", index=False)
 
 manifest = [{"file": f.name, "bytes": f.stat().st_size,
              "downloaded_utc": datetime.fromtimestamp(f.stat().st_mtime, timezone.utc).isoformat(timespec="seconds")}

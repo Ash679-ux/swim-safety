@@ -1,6 +1,6 @@
 """Is the river safe to swim in today? One Streamlit page applying the two-part rule.
 
-Run from the project root, after 04_samples.py has written data/interim/sites.csv:
+Run from the project root (reads sites.csv, written by 04_samples.py and committed):
     streamlit run app.py
 
 A site is flagged if it rained more than RAIN_MM in the last 48 h (live EA rain
@@ -92,7 +92,7 @@ def site_row(s, now):
 def build_rows(now_ns):
     """All sites at once: rain for one site took 20-35 s one by one, so 20 sites took minutes."""
     now = pd.Timestamp(now_ns, tz="UTC")
-    sites = pd.read_csv("data/interim/sites.csv").dropna(subset=["lat", "long"])
+    sites = pd.read_csv("sites.csv")
     with ThreadPoolExecutor(len(sites)) as pool:
         return list(pool.map(lambda s: site_row(s, now), sites.itertuples()))
 

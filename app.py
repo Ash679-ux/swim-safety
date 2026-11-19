@@ -152,5 +152,6 @@ st.markdown(
     f"under {MAX_RESULT_AGE_D} days old) raised the catch to 48 of 62, at the cost of slightly "
     "more false alarms: about a third of alerts were real failures. It still misses 11 of the "
     "17 failures that followed a dry spell, so lower risk is not a guarantee.\n\n"
-    "Data: Environment Agency bathing-water samples and real-time rain gauges. "
+    "Data: Environment Agency [bathing-water samples](https://environment.data.gov.uk/bwq/) and "
+    "[real-time rain gauges](https://environment.data.gov.uk/flood-monitoring/doc/rainfall). "
     "Code and full results: [github.com/Ash679-ux/swim-safety](https://github.com/Ash679-ux/swim-safety).")

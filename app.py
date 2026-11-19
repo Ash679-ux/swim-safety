@@ -18,13 +18,13 @@ import requests
 import streamlit as st
 
 sys.path.insert(0, "scripts")
-from common import BASE, get_json, text  # noqa: E402
+from common import BASE  # noqa: E402
 from funcs import build_series, rain_total  # noqa: E402
 
 RAIN_MM = 2.7        # balanced rain-rule threshold, set on 2020-2025 data in 09_models.py
 RAIN_KM, N_RAIN = 15, 3
 MAX_RESULT_AGE_D = 14  # ponytail: a fixed cut-off for "recent"; the model used same-season results only
-RAIN_DEADLINE_S = 60  # sites whose rain isn't back by then show as "no rain data"
+DEADLINE_S = 60  # whatever isn't back by then shows as unknown, so the page always loads
 RAIN_WORKERS = 8      # 20 sites at once (80 requests) hung on Streamlit Cloud
 FM = "https://environment.data.gov.uk/flood-monitoring"
 
@@ -65,9 +65,16 @@ def last_results():
     One request per site got HTTP 429 (too many requests) from the EA on Streamlit Cloud.
     Pass/fail uses the same test as the model's previous-result feature: E. coli over 1000
     or enterococci over 400."""
-    items = get_json(f"{BASE}/doc/bathing-water.json", {"_view": "basic", "_pageSize": 1000, "_properties": (
-        "eubwidNotation,latestSampleAssessment.sampleDateTime,"
-        "latestSampleAssessment.escherichiaColiCount,latestSampleAssessment.intestinalEnterococciCount")})["result"]["items"]
+    try:  # no retries: on Streamlit Cloud retries piled up behind HTTP 429s and the page hung
+        r = requests.get(f"{BASE}/doc/bathing-water.json", timeout=(5, 30), params={
+            "_view": "basic", "_pageSize": 1000, "_properties": (
+                "eubwidNotation,latestSampleAssessment.sampleDateTime,"
+                "latestSampleAssessment.escherichiaColiCount,latestSampleAssessment.intestinalEnterococciCount")})
+        r.raise_for_status()
+        items = r.json()["result"]["items"]
+    except (requests.RequestException, ValueError, KeyError) as e:
+        print(f"samples request failed: {e!r}", flush=True)
+        return {}
     out = {}
     for it in items:
         s = it.get("latestSampleAssessment")
@@ -103,13 +110,15 @@ def build_rows(now_ns):
     now = pd.Timestamp(now_ns, tz="UTC")
     sites = pd.read_csv("sites.csv")
     t0 = time.time()
-    latest = last_results()
-    print(f"samples: {time.time() - t0:.0f} s", flush=True)
-    pool = ThreadPoolExecutor(RAIN_WORKERS)
+    pool = ThreadPoolExecutor(RAIN_WORKERS + 1)
+    samples = pool.submit(last_results)
     futures = {pool.submit(rain_48h, s.lat, s.long, now.value): s for s in sites.itertuples()}
-    done, _ = wait(futures, timeout=RAIN_DEADLINE_S)
+    done, _ = wait([samples, *futures], timeout=DEADLINE_S)
     pool.shutdown(wait=False, cancel_futures=True)  # don't let a stuck request hold up the page
-    print(f"rain: {len(done)}/{len(sites)} sites in {time.time() - t0:.0f} s", flush=True)
+    latest = samples.result() if samples in done else {}
+    print(f"samples: {len(latest)} sites; rain: {len(done & futures.keys())}/{len(sites)} sites; "
+          f"{time.time() - t0:.0f} s", flush=True)
+    # ponytail: missing samples show as "none", not "unavailable"; matters only if the EA is down in season
     return [site_row(s, now, f.result() if f in done else np.nan, latest) for f, s in futures.items()]
 
 

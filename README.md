@@ -100,6 +100,24 @@ The thresholds above maximise F1, which treats a missed failure and a false alar
 
 So the recall-first choice is the two-part rule at the balanced rain threshold: 48 of 62 failures caught (77%) from 146 alerts. Going further mostly adds warnings on days that were safer than average.
 
+### Predicting the bacteria count
+
+The models above learn from pass/fail only, so a sample at 900 E. coli counts the same as one at 20. To use every sample's actual count, two linear regressions were fitted on exactly the full logistic regression's features, and each one's prediction became a failure score (`scripts/13_ecoli_regression.py`):
+
+- **E. coli:** log10 E. coli.
+- **Furthest over the limit:** log10 of the larger of E. coli/1000 and enterococci/400, so above 0 means a fail. This one also sees the 15 of 62 failures in 2026 that were on enterococci alone.
+
+| 2026 test season | E. coli | Furthest over the limit |
+| --- | --- | --- |
+| PR-AUC for failures (logistic regression 0.54, rain rule 0.48) | 0.53 (0.40–0.65) | 0.53 (0.41–0.65) |
+| Paired difference vs logistic regression | −0.011 (−0.057 to +0.031) | −0.005 (−0.040 to +0.028) |
+| Paired difference vs rain rule | +0.040 (−0.042 to +0.119) | +0.046 (−0.030 to +0.122) |
+| Count itself: R² (training-average baseline) | 0.24 (−0.21) | 0.27 (−0.16) |
+| Typical error | factor of 1.8 | factor of 1.9 |
+| Alert if prediction is over the limit | 31 alerts, 22 real (71%); 22 of 62 caught | 49 alerts, 28 real (57%); 28 of 62 caught |
+
+Every paired difference has a 95% range that includes zero. The counts didn't improve the ranking, even with enterococci included: both regressions rank 2026 samples no better than the pass/fail model. The baselines below zero show that 2026 counts ran lower than in 2021–2025. That makes the counts themselves harder to predict, but PR-AUC depends only on the order of the scores, not their level. A predicted value over the limit is a fairly precise warning but misses over half the failures, so at best it could mark a 'very likely unsafe' level on top of the two-part rule.
+
 ### Spills experiment: 4 Thames sites, 2023–2026
 
 179 samples, 10 failures. With so few failures, comparing prediction scores would be close to meaningless, so the question was asked statistically: does adding upstream spill hours improve a model that already knows rain?
@@ -167,6 +185,7 @@ python scripts/09_models.py            # main model
 python scripts/10_spills_experiment.py # spills experiment
 python scripts/11_figures.py           # figures
 python scripts/12_error_analysis.py    # calibration and error analysis
+python scripts/13_ecoli_regression.py  # bacteria counts as a continuous target
 ```
 
 Scripts 01–03 are the initial data audit and are not needed to rebuild the results. The first full run downloads several million readings and takes about 10–15 minutes.
@@ -198,7 +217,7 @@ Code: MIT licence (see `LICENSE`). Data: EA bathing-water, hydrology and flood-m
 ```
 app.py          Streamlit page: each site's risk today (streamlit run app.py)
 run_all.sh      runs the pipeline in order (./run_all.sh, or ./run_all.sh 06 to start at step 06)
-scripts/        numbered pipeline steps (01-12) and shared code (common.py downloads,
+scripts/        numbered pipeline steps (01-13) and shared code (common.py downloads,
                 funcs.py tested core logic, plotstyle.py figure style)
 tests/          unit tests (pytest)
 data/raw/       untouched API downloads (not committed; rebuilt by the scripts)

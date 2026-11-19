@@ -1,22 +1,22 @@
 # Is the river safe to swim in today?
 
-Predicting whether a sample at one of England's 20 river bathing sites will fail its bacteria limits, from recent rain, river flow and upstream sewage spills. The dataset was built from five public sources (about 1,000 samples, 4 million rain and flow readings, 73,000 sewage spills), not downloaded ready-made.
+This project predicts whether a water sample at one of England's 20 river bathing sites will fail its bacteria limits, using recent rain, river flow and upstream sewage spills, so a swimmer can judge whether the river is safe that day. The dataset was built from five public sources (about 1,000 samples, 4 million rain and flow readings, 73,000 sewage spills), not downloaded ready-made.
 
 ![Failure rate by rain in the previous 48 hours](results/figures/1_failure_rate_by_rain.png)
 
 - **Rain is the main driver.** About 10% of samples fail after a dry 48 hours, and 74% after more than 10 mm.
-- **A one-line rule is as good as the models.** "Fail if more than 2.7 mm fell in the previous 48 h" scores PR-AUC 0.48 on the unseen 2026 season; logistic regression, random forests and gradient boosting can't be told apart from it.
+- **A one-line rule is as good as the models.** 'Fail if more than 2.7 mm fell in the previous 48 h' scores PR-AUC 0.48 on the unseen 2026 season; logistic regression, random forests and gradient boosting can't be told apart from it.
 - **About a quarter of failures come in dry weather**, and no weather model caught any of them. What works is checking the site's last result: alerting when it rained **or** the last known result failed catches 48 of 62 failures instead of 40, including 6 of the 17 dry-weather ones, for a small loss in precision (33% vs 37%).
-- **Sewage spills upstream hint at extra risk beyond rain** (odds ratio about 1.6, permutation p = 0.06), but with only 10 failures at the Thames sites this is a lead, not a finding.
+- **Sewage spills upstream hint at extra risk beyond rain** (odds ratio about 1.6, permutation p = 0.06), but with only 10 failures at the Thames sites it's a lead to follow up rather than a result.
 
-Skills shown: building a dataset from APIs, linking sources in space and time, leakage-safe features with a built-in test, time-based evaluation, calibration, error analysis and honest statistics on small data.
+Skills shown: building a dataset from APIs, linking sources in space and time, leakage-safe features with a built-in test, time-based evaluation, calibration, error analysis, and confidence intervals and significance tests on a small dataset.
 
 ## The question
 
 Given the rain and the sewage spills upstream in the last few days, will today's sample at a designated river bathing site fail?
 
 - **One row = one Environment Agency (EA) bathing-water sample** at one of England's 20 designated river bathing sites, 2021–2026.
-- **Label:** fail if E. coli > 1000 or intestinal enterococci > 400 cfu/100 ml, the inland "good" boundaries from the bathing water standards.
+- **Label:** fail if E. coli > 1000 or intestinal enterococci > 400 cfu/100 ml, the inland 'good' boundaries from the bathing water standards.
 
 ## Data
 
@@ -122,9 +122,9 @@ Every choice made while building the dataset and models, and why, is listed in [
 
 ## Limitations
 
-- **The spills experiment is small:** 179 samples and 10 failures. Treat it as a lead, not a finding.
+- **The spills experiment is small:** 179 samples and 10 failures, so treat the spills result as a lead.
 - **Spill data covers Thames Water only**, because no other company publishes spill history.
-- **Spill alerts indicate spills, they don't confirm them**, and monitors can be offline.
+- **A spill alert suggests a spill but doesn't confirm it**, and monitors can be offline.
 - **2026 was cleaner than the training years** (15.6% failing vs 26.7%), so thresholds and probabilities learned from training data run high for 2026.
 - **About a quarter of failures follow dry weather**, which no feature here explains.
 - **Upstream links rely on a 50 m flow-direction grid.** A path running alongside the river within 300 m of a site but joining it further downstream would be linked wrongly. `results/figures/5_upstream_links_check.png` maps every link within 50 km so this can be checked by eye.
@@ -136,18 +136,24 @@ Every choice made while building the dataset and models, and why, is listed in [
 
 ## Reproduce it
 
-Python 3.11+ on Linux or WSL. Everything is rebuilt from the public APIs; downloads are cached in `data/raw/`, so reruns are fast.
+You need Python 3.11+ on Linux or WSL. Everything is rebuilt from the public APIs, and downloads are cached in `data/raw/`, so reruns are fast.
 
-```bash
-git clone https://github.com/Ash679-ux/swim-safety
-cd swim-safety
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+1. Clone the repository and install the requirements:
 
-./run_all.sh                           # run every step below in order
-```
+   ```bash
+   git clone https://github.com/Ash679-ux/swim-safety
+   cd swim-safety
+   python3 -m venv .venv && source .venv/bin/activate
+   pip install -r requirements.txt
+   ```
 
-Or run steps one at a time (or `./run_all.sh 06` to start from step 06):
+2. Run every step in order:
+
+   ```bash
+   ./run_all.sh
+   ```
+
+To start from a later step, use `./run_all.sh 06`, or run the steps one at a time:
 
 ```bash
 python scripts/04_samples.py           # clean samples and site table
@@ -166,7 +172,11 @@ Scripts 01–03 are the initial data audit and are not needed to rebuild the res
 
 ## Tests
 
-`pytest` runs 35 unit tests of the core logic (`tests/test_funcs.py`): the failure label, pairing spill start/stop alerts, rain and weather windows (including that readings after a sample are never used), spills "as known at the time", the site-history feature (including a check that the label can't leak into it) and the fast PR-AUC used for the bootstrap. They also run on GitHub on every push.
+`pytest` runs 37 unit tests of the core logic (`tests/test_funcs.py`): the failure label, pairing spill start/stop alerts, rain and weather windows (including that readings after a sample are never used), spills 'as known at the time', the site-history feature (including a check that the label can't leak into it) and the fast PR-AUC used for the bootstrap. They also run on GitHub on every push.
+
+## How this was built
+
+The code was written with AI assistance (Claude). I made the decisions and checked them: the question, which data sources to use, how sites are linked to rain gauges, flow stations and spill outlets, the time-based train/test split and the alert threshold. I ran the pipeline on the real data myself and checked each result before it went into this README. DATA_DECISIONS.md explains the reasoning behind each choice.
 
 ## Licence and data
 

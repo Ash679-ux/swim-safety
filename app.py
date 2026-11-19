@@ -84,7 +84,7 @@ def site_row(s, now):
     recent = pd.notna(when) and (now - when).days <= MAX_RESULT_AGE_D
     reasons = (["rain"] if rain > RAIN_MM else []) + (["last result failed"] if recent and failed else [])
     risk = "Higher: " + " and ".join(reasons) if reasons else ("Unknown: no rain data" if np.isnan(rain) else "Lower")
-    return {"Site": s.site, "Risk": risk, "Rain, last 48 h (mm)": round(rain, 1),
+    return {"Site": s.site, "lat": s.lat, "lon": s.long, "Risk": risk, "Rain, last 48 h (mm)": round(rain, 1),
             "Last sample": f"{when:%d %b %Y}, {'fail' if failed else 'pass'}" if pd.notna(when) else "none"}
 
 
@@ -100,11 +100,32 @@ def build_rows(now_ns):
 with st.spinner("Fetching rain and sample results (about 30 seconds on the first load)..."):
     rows = build_rows(now.floor("15min").value)
 
+COLOURS = {"Higher": ("#d62728", "#fbebeb"), "Lower": ("#2ca02c", "#e5f4e4"), "Unknown": ("#888888", "#f0efec")}
 table = pd.DataFrame(rows).sort_values(["Risk", "Site"])
-st.dataframe(table, hide_index=True, width="stretch")
+level = table["Risk"].str.split(":").str[0]
+flagged, unknown = (level == "Higher").sum(), (level == "Unknown").sum()
+st.subheader(f"{flagged} of {len(table)} sites flagged today"
+             + (f", {unknown} without rain data" if unknown else ""))
+
+st.map(table.assign(colour=level.map(lambda k: COLOURS[k][0])), latitude="lat", longitude="lon",
+       color="colour", size=3000)
+st.caption("Red: higher risk. Green: lower risk. Grey: no rain data.")
+
+st.dataframe(table.drop(columns=["lat", "lon"]).style.map(
+    lambda r: f"background-color: {COLOURS[r.split(':')[0]][1]}", subset=["Risk"]),
+    hide_index=True, width="stretch")
+
+st.subheader("Why rain and the last result")
 st.markdown(
-    f"**How this works.** A site is flagged if more than {RAIN_MM} mm of rain fell in the last "
-    f"48 hours at the nearest rain gauges, or if its last sample (within {MAX_RESULT_AGE_D} days) "
-    "failed the bathing-water limits. On the 2026 test season this caught 48 of 62 failures; "
-    "about a third of alerts were real failures. A lower-risk result is not a guarantee: "
-    "11 of 17 failures after dry weather were still missed. Data: Environment Agency.")
+    f"Rain washes sewage overflows and farm runoff into rivers, so the simplest warning is "
+    f"rain: more than {RAIN_MM} mm in the last 48 hours at the nearest gauges. On the 2026 "
+    "season, which the rule never saw while it was being set, that alone caught 40 of 62 failed samples. "
+    "No machine-learning model I trained did significantly better.\n\n"
+    "Most of the failures it missed came after dry weather. Those are hard to predict from "
+    "weather, but a site that had just failed was far more likely to fail again: on dry days, "
+    "31% of samples failed after a failed result against 5% otherwise. Adding 'or the last result failed' (counting a result only if it is "
+    f"under {MAX_RESULT_AGE_D} days old) raised the catch to 48 of 62, at the cost of slightly "
+    "more false alarms: about a third of alerts were real failures. It still misses 11 of the "
+    "17 failures that followed a dry spell, so lower risk is not a guarantee.\n\n"
+    "Data: Environment Agency bathing-water samples and real-time rain gauges. "
+    "Code and full results: [github.com/Ash679-ux/swim-safety](https://github.com/Ash679-ux/swim-safety).")

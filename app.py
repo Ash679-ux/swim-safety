@@ -57,18 +57,25 @@ def rain_48h(lat, lon, now_ns):
     return float(np.mean(totals)) if totals else np.nan
 
 
-def last_result(sid):
-    """Newest published sample: (time, failed). Pass/fail uses the same test as the
-    model's previous-result feature: E. coli over 1000 or enterococci over 400."""
-    items = get_json(f"{BASE}/doc/bathing-water-quality/in-season/sample.json",
-                     {"bwq_bathingWater.eubwidNotation": sid, "_sort": "-sampleDateTime", "_pageSize": 1})["result"]["items"]
-    if not items:
-        return pd.NaT, False
-    it = items[0]
-    when = pd.to_datetime(text(it.get("sampleDateTime")), utc=True)  # an hour out at most; fine for a 14-day cut-off
-    ratio = max(float(it.get("escherichiaColiCount") or 0) / 1000,
-                float(it.get("intestinalEnterococciCount") or 0) / 400)
-    return when, ratio > 1
+def last_results():
+    """Newest published sample for every bathing water: {id: (time, failed)}, in ONE request.
+    One request per site got HTTP 429 (too many requests) from the EA on Streamlit Cloud.
+    Pass/fail uses the same test as the model's previous-result feature: E. coli over 1000
+    or enterococci over 400."""
+    items = get_json(f"{BASE}/doc/bathing-water.json", {"_view": "basic", "_pageSize": 1000, "_properties": (
+        "eubwidNotation,latestSampleAssessment.sampleDateTime,"
+        "latestSampleAssessment.escherichiaColiCount,latestSampleAssessment.intestinalEnterococciCount")})["result"]["items"]
+    out = {}
+    for it in items:
+        s = it.get("latestSampleAssessment")
+        if not isinstance(s, dict) or not s.get("sampleDateTime"):
+            continue
+        # sampleDateTime comes as a URI ending in the local time; an hour out at most, fine for a 14-day cut-off
+        when = pd.Timestamp(str(s["sampleDateTime"]).rsplit("/", 1)[-1], tz="UTC")
+        ratio = max(float(s.get("escherichiaColiCount") or 0) / 1000,
+                    float(s.get("intestinalEnterococciCount") or 0) / 400)
+        out[it["eubwidNotation"]] = (when, ratio > 1)
+    return out
 
 
 st.title("Is the river safe to swim in today?")
@@ -78,9 +85,9 @@ if not (5 <= now.month <= 9):
     st.info("Outside the bathing season (May to September) there are no new samples, "
             "so only the rain part of the rule can flag a site.")
 
-def site_row(s, now):
+def site_row(s, now, latest):
     rain = rain_48h(s.lat, s.long, now.value)
-    when, failed = last_result(s.id)
+    when, failed = latest.get(s.id, (pd.NaT, False))
     recent = pd.notna(when) and (now - when).days <= MAX_RESULT_AGE_D
     reasons = (["rain"] if rain > RAIN_MM else []) + (["last result failed"] if recent and failed else [])
     risk = "Higher: " + " and ".join(reasons) if reasons else ("Unknown: no rain data" if np.isnan(rain) else "Lower")
@@ -93,8 +100,9 @@ def build_rows(now_ns):
     """All sites at once: rain for one site took 20-35 s one by one, so 20 sites took minutes."""
     now = pd.Timestamp(now_ns, tz="UTC")
     sites = pd.read_csv("sites.csv")
+    latest = last_results()
     with ThreadPoolExecutor(len(sites)) as pool:
-        return list(pool.map(lambda s: site_row(s, now), sites.itertuples()))
+        return list(pool.map(lambda s: site_row(s, now, latest), sites.itertuples()))
 
 
 with st.spinner("Fetching rain and sample results (about 30 seconds on the first load)..."):

@@ -171,6 +171,16 @@ python scripts/12_error_analysis.py    # calibration and error analysis
 
 Scripts 01–03 are the initial data audit and are not needed to rebuild the results. The first full run downloads several million readings and takes about 10–15 minutes.
 
+## Today's risk page
+
+`app.py` is a one-page Streamlit app that applies the two-part rule to every site right now: it flags a site if more than 2.7 mm of rain fell in the last 48 hours at the nearest live rain gauges, or if the site's latest sample (within 14 days) failed. It needs `data/interim/sites.csv`, so run step 04 first, then:
+
+```bash
+streamlit run app.py
+```
+
+The live rain comes from the EA real-time flood-monitoring API, whose gauges aren't always the ones the models were trained on. Outside the bathing season there are no new samples, so only the rain part can flag a site.
+
 ## Tests
 
 `pytest` runs 38 unit tests of the core logic (`tests/test_funcs.py`): the failure label, pairing spill start/stop alerts, rain and weather windows (including that readings after a sample are never used), spills 'as known at the time', the site-history feature (including a check that the label can't leak into it) and the fast PR-AUC used for the bootstrap. They also run on GitHub on every push.
@@ -181,11 +191,12 @@ The code was written with AI assistance (Claude). I made the decisions and check
 
 ## Licence and data
 
-Code: MIT licence (see `LICENSE`). Data: EA bathing-water and hydrology data under the Open Government Licence v3.0; Thames Water open data under its portal terms; Open-Meteo weather data under CC BY 4.0; the flow-direction grid from the POOPy project. Raw data isn't committed; the scripts download it.
+Code: MIT licence (see `LICENSE`). Data: EA bathing-water, hydrology and flood-monitoring data under the Open Government Licence v3.0; Thames Water open data under its portal terms; Open-Meteo weather data under CC BY 4.0; the flow-direction grid from the POOPy project. Raw data isn't committed; the scripts download it.
 
 ## Repository layout
 
 ```
+app.py          Streamlit page: each site's risk today (streamlit run app.py)
 run_all.sh      runs the pipeline in order (./run_all.sh, or ./run_all.sh 06 to start at step 06)
 scripts/        numbered pipeline steps (01-12) and shared code (common.py downloads,
                 funcs.py tested core logic, plotstyle.py figure style)

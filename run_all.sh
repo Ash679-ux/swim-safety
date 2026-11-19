@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run the pipeline steps in order, stopping at the first error.
 #
-#   ./run_all.sh        run steps 04-12 (the full pipeline)
+#   ./run_all.sh        run steps 04-13 (the full pipeline)
 #   ./run_all.sh 06     start from step 06 (earlier outputs must already exist)
 #   ./run_all.sh 09 10  run only steps 09 to 10
 #
@@ -10,7 +10,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 FROM=${1:-04}
-TO=${2:-12}
+TO=${2:-13}
 start=$SECONDS
 
 for script in scripts/[0-9][0-9]*_*.py; do  # includes 05b_weather.py, right after 05

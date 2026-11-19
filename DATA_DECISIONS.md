@@ -14,6 +14,7 @@ Every choice made while building the dataset and models, and why.
 | Rain | Average of the 3 nearest EA gauges (within 20 km); a gauge counts only with 80% of readings present in the window; "Suspect" readings kept | Averaging limits the effect of one bad gauge; dropping Suspect readings (16%) would leave gaps |
 | Flow | Nearest EA flow station on the same river (within 40 km); none for Chester (no Dee station) | Flow from a tributary or another river is worse than none |
 | Spills | Thames Water start/stop alerts paired into spills; zero-length spills dropped; monitor offline periods kept as a feature | EDM alerts indicate spills rather than confirm them |
+| Spill dilution | Tried spill hours (48 h, 25 km) divided by river flow; kept as an exploratory feature only, not the main spill measure | Permutation p = 0.50 against 0.056 for plain spill hours. Flow helps more as its own term in the model (odds ratio 2.37 with flow included) |
 | Upstream rule | Follow the flow-direction grid downstream from each overflow; upstream if the path passes within 300 m of the site | Excludes downstream overflows automatically; distances run 5–10% long because the path zigzags across 50 m grid cells |
 | No leakage | Every feature uses only data from before the sample time, checked by a built-in test | The model may only see what was known when the sample was taken |
 | Split | Train 2021–2025, test 2026 | Tests on a season the model has never seen |

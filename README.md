@@ -110,11 +110,12 @@ So the recall-first choice is the two-part rule at the balanced rain threshold: 
 | Likelihood-ratio test, spills added to a rain model | Odds ratio 1.60 per log(1 + spill hours), 95% CI 0.90–2.83, p = 0.13 |
 | Permutation test (spills shuffled within site and rain group) | p = 0.056 |
 | Same test with river flow also in the model | Odds ratio 2.37, 95% CI 1.23–4.56, p = 0.015 (one of two models tried, so supporting evidence only) |
+| Spill hours divided by river flow, same permutation test | p = 0.50: weaker than spill hours alone |
 | Cross-validated PR-AUC | Rain only 0.39; rain + spills 0.35 |
 
 ![Spill odds ratios by distance band and time window](results/figures/3_spill_odds_ratios.png)
 
-In plain terms: under the rain model, a sample taken after 6 hours of upstream spilling has about 2.5 times the odds of failing, but the plausible range runs from no effect to about 7 times. The signal is strongest for spills 25–50 km upstream over the previous 48–72 hours, which fits river travel times of very roughly 25 km a day. Within 10 km it is weakest, because only 1–4 overflows sit that close to each site. More seasons of data would settle the question.
+In plain terms: under the rain model, a sample taken after 6 hours of upstream spilling has about 2.5 times the odds of failing, but the plausible range runs from no effect to about 7 times. The signal is strongest for spills 25–50 km upstream over the previous 48–72 hours, which fits river travel times of very roughly 25 km a day. Within 10 km it is weakest, because only 1–4 overflows sit that close to each site. Dividing spill hours by river flow, so that a spill counts for less in a fuller river, made the signal weaker rather than stronger; flow works better as a separate term in the model. More seasons of data would settle the question.
 
 ## Data decisions
 
@@ -172,7 +173,7 @@ Scripts 01–03 are the initial data audit and are not needed to rebuild the res
 
 ## Tests
 
-`pytest` runs 37 unit tests of the core logic (`tests/test_funcs.py`): the failure label, pairing spill start/stop alerts, rain and weather windows (including that readings after a sample are never used), spills 'as known at the time', the site-history feature (including a check that the label can't leak into it) and the fast PR-AUC used for the bootstrap. They also run on GitHub on every push.
+`pytest` runs 38 unit tests of the core logic (`tests/test_funcs.py`): the failure label, pairing spill start/stop alerts, rain and weather windows (including that readings after a sample are never used), spills 'as known at the time', the site-history feature (including a check that the label can't leak into it) and the fast PR-AUC used for the bootstrap. They also run on GitHub on every push.
 
 ## How this was built
 

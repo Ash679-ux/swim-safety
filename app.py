@@ -8,7 +8,8 @@ gauges within 15 km) OR its most recent published sample failed. On the 2026
 test season this caught 48 of 62 failures, with 33% of alerts being real failures.
 """
 import sys
-from concurrent.futures import ThreadPoolExecutor
+import time
+from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
@@ -23,6 +24,8 @@ from funcs import build_series, rain_total  # noqa: E402
 RAIN_MM = 2.7        # balanced rain-rule threshold, set on 2020-2025 data in 09_models.py
 RAIN_KM, N_RAIN = 15, 3
 MAX_RESULT_AGE_D = 14  # ponytail: a fixed cut-off for "recent"; the model used same-season results only
+RAIN_DEADLINE_S = 60  # sites whose rain isn't back by then show as "no rain data"
+RAIN_WORKERS = 8      # 20 sites at once (80 requests) hung on Streamlit Cloud
 FM = "https://environment.data.gov.uk/flood-monitoring"
 
 
@@ -32,7 +35,7 @@ def rain_48h(lat, lon, now_ns):
     ponytail: real-time flood-monitoring gauges, which can differ from the hydrology
     gauges the models were trained on; matters if a site's nearest gauge is different."""
     try:
-        stations = requests.get(f"{FM}/id/stations", timeout=30, params={
+        stations = requests.get(f"{FM}/id/stations", timeout=(5, 20), params={
             "parameter": "rainfall", "lat": lat, "long": lon, "dist": RAIN_KM}).json()["items"]
     except requests.RequestException:
         return np.nan
@@ -42,7 +45,7 @@ def rain_48h(lat, lon, now_ns):
 
     def gauge_total(notation):  # each call takes 5-10 s, so the gauges run at the same time
         try:
-            items = requests.get(f"{FM}/id/stations/{notation}/readings", timeout=30,
+            items = requests.get(f"{FM}/id/stations/{notation}/readings", timeout=(5, 20),
                                  params={"parameter": "rainfall", "since": since, "_limit": 1000}).json()["items"]
         except requests.RequestException:
             return np.nan
@@ -85,8 +88,7 @@ if not (5 <= now.month <= 9):
     st.info("Outside the bathing season (May to September) there are no new samples, "
             "so only the rain part of the rule can flag a site.")
 
-def site_row(s, now, latest):
-    rain = rain_48h(s.lat, s.long, now.value)
+def site_row(s, now, rain, latest):
     when, failed = latest.get(s.id, (pd.NaT, False))
     recent = pd.notna(when) and (now - when).days <= MAX_RESULT_AGE_D
     reasons = (["rain"] if rain > RAIN_MM else []) + (["last result failed"] if recent and failed else [])
@@ -100,9 +102,15 @@ def build_rows(now_ns):
     """All sites at once: rain for one site took 20-35 s one by one, so 20 sites took minutes."""
     now = pd.Timestamp(now_ns, tz="UTC")
     sites = pd.read_csv("sites.csv")
+    t0 = time.time()
     latest = last_results()
-    with ThreadPoolExecutor(len(sites)) as pool:
-        return list(pool.map(lambda s: site_row(s, now, latest), sites.itertuples()))
+    print(f"samples: {time.time() - t0:.0f} s", flush=True)
+    pool = ThreadPoolExecutor(RAIN_WORKERS)
+    futures = {pool.submit(rain_48h, s.lat, s.long, now.value): s for s in sites.itertuples()}
+    done, _ = wait(futures, timeout=RAIN_DEADLINE_S)
+    pool.shutdown(wait=False, cancel_futures=True)  # don't let a stuck request hold up the page
+    print(f"rain: {len(done)}/{len(sites)} sites in {time.time() - t0:.0f} s", flush=True)
+    return [site_row(s, now, f.result() if f in done else np.nan, latest) for f, s in futures.items()]
 
 
 with st.spinner("Fetching rain and sample results (about 30 seconds on the first load)..."):

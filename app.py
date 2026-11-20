@@ -35,9 +35,12 @@ def rain_48h(lat, lon, now_ns):
     ponytail: real-time flood-monitoring gauges, which can differ from the hydrology
     gauges the models were trained on; matters if a site's nearest gauge is different."""
     try:
-        stations = requests.get(f"{FM}/id/stations", timeout=(5, 20), params={
-            "parameter": "rainfall", "lat": lat, "long": lon, "dist": RAIN_KM}).json()["items"]
-    except requests.RequestException:
+        r = requests.get(f"{FM}/id/stations", timeout=(5, 20), params={
+            "parameter": "rainfall", "lat": lat, "long": lon, "dist": RAIN_KM})
+        r.raise_for_status()
+        stations = r.json()["items"]
+    except requests.RequestException as e:
+        print(f"rain stations request failed: {e!r}", flush=True)
         return np.nan
     stations = [s for s in stations if isinstance(s.get("lat"), float)]  # a few list several positions
     stations.sort(key=lambda s: (s["lat"] - lat) ** 2 + ((s["long"] - lon) * np.cos(np.radians(lat))) ** 2)
@@ -45,8 +48,10 @@ def rain_48h(lat, lon, now_ns):
 
     def gauge_total(notation):  # each call takes 5-10 s, so the gauges run at the same time
         try:
-            items = requests.get(f"{FM}/id/stations/{notation}/readings", timeout=(5, 20),
-                                 params={"parameter": "rainfall", "since": since, "_limit": 1000}).json()["items"]
+            r = requests.get(f"{FM}/id/stations/{notation}/readings", timeout=(5, 20),
+                             params={"parameter": "rainfall", "since": since, "_limit": 1000})
+            r.raise_for_status()
+            items = r.json()["items"]
         except requests.RequestException:
             return np.nan
         if not items:
@@ -90,7 +95,7 @@ def last_results():
 
 st.title("Is the river safe to swim in today?")
 now = pd.Timestamp.now(tz="UTC")
-st.caption(f"Checked {now.tz_convert('Europe/London'):%d %B %Y, %H:%M}. Data refresh every 15 minutes.")
+st.caption(f"Checked {now.tz_convert('Europe/London'):%d %B %Y, %H:%M}. Data refresh every hour.")
 if not (5 <= now.month <= 9):
     st.info("Outside the bathing season (May to September) there are no new samples, "
             "so only the rain part of the rule can flag a site.")
@@ -104,7 +109,7 @@ def site_row(s, now, rain, latest):
             "Last sample": f"{when:%d %b %Y}, {'fail' if failed else 'pass'}" if pd.notna(when) else "none"}
 
 
-@st.cache_data(ttl=900, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)  # hourly: the EA rate-limited us at 15 min
 def build_rows(now_ns):
     """All sites at once: rain for one site took 20-35 s one by one, so 20 sites took minutes."""
     now = pd.Timestamp(now_ns, tz="UTC")
@@ -116,14 +121,15 @@ def build_rows(now_ns):
     done, _ = wait([samples, *futures], timeout=DEADLINE_S)
     pool.shutdown(wait=False, cancel_futures=True)  # don't let a stuck request hold up the page
     latest = samples.result() if samples in done else {}
-    print(f"samples: {len(latest)} sites; rain: {len(done & futures.keys())}/{len(sites)} sites; "
+    rain_ok = sum(not np.isnan(f.result()) for f in done & futures.keys())
+    print(f"samples: {len(latest)} sites; rain data: {rain_ok}/{len(sites)} sites; "
           f"{time.time() - t0:.0f} s", flush=True)
     # ponytail: missing samples show as "none", not "unavailable"; matters only if the EA is down in season
     return [site_row(s, now, f.result() if f in done else np.nan, latest) for f, s in futures.items()]
 
 
 with st.spinner("Fetching rain and sample results (about 30 seconds on the first load)..."):
-    rows = build_rows(now.floor("15min").value)
+    rows = build_rows(now.floor("1h").value)
 
 COLOURS = {"Higher": ("#d62728", "#fbebeb"), "Lower": ("#2ca02c", "#e5f4e4"), "Unknown": ("#888888", "#f0efec")}
 table = pd.DataFrame(rows).sort_values(["Risk", "Site"])

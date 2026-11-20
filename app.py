@@ -22,7 +22,7 @@ sys.path.insert(0, "scripts")
 from common import BASE  # noqa: E402
 from funcs import build_series, rain_total  # noqa: E402
 
-RAIN_MM = 2.7        # balanced rain-rule threshold, set on 2020-2025 data in 09_models.py
+RAIN_MM = 2.7        # balanced rain-rule threshold, set on 2021-2025 data in 09_models.py
 RAIN_KM, N_RAIN = 15, 3
 MAX_RESULT_AGE_D = 14  # ponytail: a fixed cut-off for "recent"; the model used same-season results only
 DEADLINE_S = 60  # whatever isn't back by then shows as unknown, so the page always loads
@@ -96,7 +96,7 @@ def last_results():
 
 st.title("Is the river safe to swim in today?")
 now = pd.Timestamp.now(tz="UTC")
-st.caption(f"Checked {now.tz_convert('Europe/London'):%d %B %Y, %H:%M}. Data refresh every hour.")
+st.caption(f"Checked {now.tz_convert('Europe/London'):%d %B %Y, %H:%M}. Data refreshes every hour.")
 if not (5 <= now.month <= 9):
     st.info("Outside the bathing season (May to September) there are no new samples, "
             "so only the rain part of the rule can flag a site.")

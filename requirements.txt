@@ -1,6 +1,4 @@
 # Direct dependencies, with the oldest versions the code is written for.
-# For the exact versions this project was last run with, see requirements-lock.txt
-# (created with: pip freeze > requirements-lock.txt).
 requests>=2.31
 numpy>=2.0
 pandas>=3.0

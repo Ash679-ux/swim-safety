@@ -1,5 +1,7 @@
 # Is the river safe to swim in today?
 
+**Live page:** [swim-safety.streamlit.app](https://swim-safety.streamlit.app) shows each site's risk today.
+
 This project predicts whether a water sample at one of England's 20 river bathing sites will fail its bacteria limits, using recent rain, river flow and upstream sewage spills, so a swimmer can judge whether the river is safe that day. The dataset was built from five public sources (about 1,000 samples, 4 million rain and flow readings, 73,000 sewage spills), not downloaded ready-made.
 
 ![Failure rate by rain in the previous 48 hours](results/figures/1_failure_rate_by_rain.png)
@@ -192,7 +194,7 @@ Scripts 01–03 are the initial data audit and are not needed to rebuild the res
 
 ## Today's risk page
 
-`app.py` is a one-page Streamlit app that applies the two-part rule to every site right now: it flags a site if more than 2.7 mm of rain fell in the last 48 hours at the nearest live rain gauges, or if the site's latest sample (within 14 days) failed. It reads `sites.csv` in the repo root (site names and coordinates, written by step 04 and committed so the page runs without the pipeline):
+`app.py` is a one-page Streamlit app, live at [swim-safety.streamlit.app](https://swim-safety.streamlit.app), that applies the two-part rule to every site right now: it flags a site if more than 2.7 mm of rain fell in the last 48 hours at the nearest live rain gauges, or if the site's latest sample (within 14 days) failed. It reads `sites.csv` in the repo root (site names and coordinates, written by step 04 and committed so the page runs without the pipeline):
 
 ```bash
 streamlit run app.py
@@ -215,14 +217,17 @@ Code: MIT licence (see `LICENSE`). Data: EA bathing-water, hydrology and flood-m
 ## Repository layout
 
 ```
-app.py          Streamlit page: each site's risk today (streamlit run app.py)
-sites.csv       site names and coordinates for app.py (written by step 04)
-run_all.sh      runs the pipeline in order (./run_all.sh, or ./run_all.sh 06 to start at step 06)
-scripts/        numbered pipeline steps (01-13) and shared code (common.py downloads,
-                funcs.py tested core logic, plotstyle.py figure style)
-tests/          unit tests (pytest)
-data/raw/       untouched API downloads (not committed; rebuilt by the scripts)
-data/interim/   cleaned tables: samples, sites, stations, rain, flow, spills, links
-data/processed/ features.csv, one row per sample
-results/        model results, predictions and figures (figures committed)
+app.py            Streamlit page: each site's risk today (streamlit run app.py)
+sites.csv         site names and coordinates for app.py (written by step 04)
+run_all.sh        runs the pipeline in order (./run_all.sh, or ./run_all.sh 06 to start at step 06)
+DATA_DECISIONS.md every data and modelling choice, and why
+scripts/          numbered pipeline steps (01-13), check_sample_hours.py (figure 6, sample-time
+                  check) and shared code (common.py downloads, funcs.py tested core logic,
+                  plotstyle.py figure style)
+tests/            unit tests (pytest)
+.github/workflows CI: runs the tests on every push
+data/raw/         untouched API downloads (not committed; rebuilt by the scripts)
+data/interim/     cleaned tables: samples, sites, stations, rain, flow, spills, links
+data/processed/   features.csv, one row per sample
+results/          model results, predictions and figures (figures committed)
 ```

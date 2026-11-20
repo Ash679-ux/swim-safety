@@ -142,13 +142,15 @@ st.subheader(f"{flagged} of {len(table)} sites flagged today"
 # pydeck (comes with Streamlit) rather than st.map, which can't stop zooming out to the whole world
 pts = table.assign(rgb=level.map(lambda k: [int(COLOURS[k][0][i:i + 2], 16) for i in (1, 3, 5)]))[["lat", "lon", "rgb"]]
 st.pydeck_chart(pdk.Deck(
+    map_style=None,  # None = Streamlit's own basemap, matching the light/dark theme
     layers=[pdk.Layer("ScatterplotLayer", pts, get_position=["lon", "lat"], get_fill_color="rgb",
                       get_radius=3000, radius_min_pixels=5)],
     initial_view_state=pdk.ViewState(latitude=pts.lat.mean(), longitude=pts.lon.mean(), zoom=5.3, min_zoom=5)))
 st.caption("Red: higher risk. Green: lower risk. Grey: no rain data.")
 
 st.dataframe(table.drop(columns=["lat", "lon"]).style.map(
-    lambda r: f"background-color: {COLOURS[r.split(':')[0]][1]}", subset=["Risk"]),
+    lambda r: f"background-color: {COLOURS[r.split(':')[0]][1]}", subset=["Risk"])
+    .format("{:.1f}", subset=["Rain, last 48 h (mm)"], na_rep="-"),  # the Styler otherwise shows 9.000000
     hide_index=True, width="stretch")
 
 st.subheader("Why rain and the last result")

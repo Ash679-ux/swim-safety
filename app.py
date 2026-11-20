@@ -97,6 +97,8 @@ def last_results():
 st.title("Is the river safe to swim in today?")
 now = pd.Timestamp.now(tz="UTC")
 st.caption(f"Checked {now.tz_convert('Europe/London'):%d %B %Y, %H:%M}. Data refreshes every hour.")
+st.warning("Not official advice. For the Environment Agency's own pollution warnings, check "
+           "[Swimfo](https://environment.data.gov.uk/bwq/profiles/) before you swim.")
 if not (5 <= now.month <= 9):
     st.info("Outside the bathing season (May to September) there are no new samples, "
             "so only the rain part of the rule can flag a site.")
@@ -107,7 +109,8 @@ def site_row(s, now, rain, latest):
     reasons = (["rain"] if rain > RAIN_MM else []) + (["last result failed"] if recent and failed else [])
     risk = "Higher: " + " and ".join(reasons) if reasons else ("Unknown: no rain data" if np.isnan(rain) else "Lower")
     return {"Site": s.site, "lat": s.lat, "lon": s.long, "Risk": risk, "Rain, last 48 h (mm)": round(rain, 1),
-            "Last sample": f"{when:%d %b %Y}, {'fail' if failed else 'pass'}" if pd.notna(when) else "none"}
+            "Last sample": f"{when:%d %b %Y}, {'fail' if failed else 'pass'}" if pd.notna(when)
+                           else "unavailable" if not latest else "none"}  # empty latest = the EA request failed
 
 
 @st.cache_data(ttl=3600, show_spinner=False)  # hourly: the EA rate-limited us at 15 min
@@ -125,7 +128,6 @@ def build_rows(now_ns):
     rain_ok = sum(not np.isnan(f.result()) for f in done & futures.keys())
     print(f"samples: {len(latest)} sites; rain data: {rain_ok}/{len(sites)} sites; "
           f"{time.time() - t0:.0f} s", flush=True)
-    # ponytail: missing samples show as "none", not "unavailable"; matters only if the EA is down in season
     return [site_row(s, now, f.result() if f in done else np.nan, latest) for f, s in futures.items()]
 
 

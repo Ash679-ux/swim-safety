@@ -47,7 +47,19 @@ No model's PR-AUC is significantly different from the rain rule's (paired bootst
 
 ## How this compares with the EA's own forecasts
 
-The Environment Agency already issues daily [pollution risk forecasts](https://environmentagency.blog.gov.uk/2024/02/23/bathing-water-classifications-and-short-term-pollution/) at bathing waters where it can (171 of 424 sites in 2023) and shows warnings on [Swimfo](https://environment.data.gov.uk/bwq/profiles/). Swimfo is the official source, and this project doesn't replace it. What this project adds is an open method with a published evaluation on held-out data. I haven't yet compared its alerts against the EA's past warnings for the same days; that is the obvious next test.
+The Environment Agency already issues daily [pollution risk forecasts](https://environmentagency.blog.gov.uk/2024/02/23/bathing-water-classifications-and-short-term-pollution/) at bathing waters where it can (171 of 424 sites in 2023) and shows warnings on [Swimfo](https://environment.data.gov.uk/bwq/profiles/). Swimfo is the official source, and this project doesn't replace it.
+
+None of the 20 river sites here gets a rain-based forecast, though. The EA's archive of daily risk records ([stp-risk-prediction](https://environment.data.gov.uk/bwq/)) marks every one of them as a non-forecast site, so the risk is only raised when the EA already knows about a pollution incident. The archive holds 77 raised-risk records across all years, and most of them come from a single incident on the River Teme in Ludlow, which ran for 52 days in August and September 2026.
+
+The archive covers 16 of the 20 sites and is patchy before 2025, so the comparison uses the 699 of 1,062 samples taken on a day with an EA record:
+
+| | Samples flagged | Failures caught (of 126) | Precision |
+|---|---|---|---|
+| EA warning in force | 10 | 2 | 20% |
+| Rain rule (> 2.7 mm in 48 h) | 194 | 81 | 42% |
+| Two-part rule | 271 | 102 | 38% |
+
+The EA doesn't try to forecast rain-driven pollution at these sites, so what the table measures is a gap in coverage. Official warnings were in force for 2 of the 126 failures; a rule anyone can check flagged 102. `scripts/check_ea_warnings.py` reproduces the table.
 
 ## Data decisions
 
@@ -135,7 +147,7 @@ run_all.sh        runs the pipeline in order (./run_all.sh, or ./run_all.sh 06 t
 DATA_DECISIONS.md every data and modelling choice, and why
 RESULTS.md        full results: all models, calibration, error analysis, spills
 scripts/          numbered pipeline steps (01-13), check_sample_hours.py (figure 6, sample-time
-                  check) and shared code (common.py downloads, funcs.py tested core logic,
+                  check), check_ea_warnings.py (EA warnings comparison) and shared code (common.py downloads, funcs.py tested core logic,
                   plotstyle.py figure style)
 tests/            unit tests (pytest)
 .github/workflows CI: runs the tests on every push
